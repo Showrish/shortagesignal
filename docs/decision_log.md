@@ -48,3 +48,32 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **What changes:** history undercounts the recall to shortage link. Main historical view is current shortages preceded by a recall, and daily snapshots become the real history
 - **Reasons:** 56% start with a standard label, which needs case and spelling cleanup. Claude handles the rest
 - **Check next:** placeholder-looking 2012-01-01 dates, and counting shortages by drug, not rows
+## 2026-10-11: Parquet files for storage, DuckDB as the engine
+- **Chose:** one Parquet file per table, read and written by DuckDB
+- **Why:** Parquet is compact and readable by DuckDB, Streamlit and Power BI. A DuckDB database file is one big binary that changes on every run
+- **Passed on:** keeping the .duckdb file as the source of truth
+
+## 2026-10-11: re-pull 60 days of recalls and merge by recall number
+- **Chose:** each run re-pulls the last 60 days of reports and keeps the latest version of each recall
+- **Why:** FDA sometimes corrects past reports. The window catches corrections without re-downloading all 18k rows every day
+- **Passed on:** pulling only since yesterday (misses corrections) and a full re-download every day (wasteful)
+
+## 2026-10-11: nested fields stored as JSON text
+- **Chose:** every column is text, with nested fields saved as JSON strings
+- **Why:** the shape of nested fields changes between pulls, which breaks merging old and new data
+- **Passed on:** keeping DuckDB's nested types
+
+## 2026-10-11: daily shortage snapshots
+- **Chose:** save the full shortage list every day with its date, keyed by package NDC, or a hash of name, company and presentation when there's no NDC
+- **Why:** the feed only shows current status, so the history has to come from our own snapshots. Rerunning on the same day replaces that day's rows instead of doubling them
+- **Passed on:** overwriting one current list
+
+## 2026-10-11: keep every version of a recall
+- **Chose:** a recall_versions table that saves a recall again only when FDA changes its content, next to a recalls table with the latest version for analysis
+- **Why:** nothing is ever lost, a bad pull can be undone, and FDA's edits become data, like a recall moving from Class II to Class I
+- **Passed on:** keeping only the latest version
+
+## 2026-10-11: shortage key is package NDC + list type + company
+- **Chose:** key each shortage row by package NDC, list type (shortage or discontinuation) and company, and merge rows FDA lists twice under the same key, recording the count in fda_listings
+- **Why:** the first real run found 30 duplicate NDC keys. The same package can sit on the shortage list and the discontinuation list at once, or be listed under two companies
+- **Passed on:** the package NDC alone
