@@ -7,3 +7,6 @@ __pycache__/
 data/raw/
 data/*.duckdb
 data/*.duckdb.wal
+data/*.parquet
+data/*.tmp
+data/state.json

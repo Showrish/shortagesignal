@@ -25,6 +25,12 @@ python -m shortagesignal.pull_full_history
 python -m shortagesignal.day1_explore
 ```
 
+## Daily pulls (Day 2)
+```
+python -m shortagesignal.ingest
+```
+The first run loads the full recall history. After that, each run re-pulls the last 60 days of recalls and merges them in (keeping FDA's latest version plus a history of every change), saves a dated snapshot of the shortage list, and refreshes the NDC directory once a week. Data lands in `data/` as Parquet files.
+
 ## Checks
 ```
 ruff check .

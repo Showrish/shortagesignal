@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from shortagesignal.config import DB_PATH, RAW_DIR, ROOT
+from shortagesignal.config import DB_PATH, RAW_DIR
 
 MANIFEST_URL = "https://api.fda.gov/download.json"   # openFDA's list of bulk files
 API_URL = "https://api.fda.gov/drug/{endpoint}.json"
@@ -125,7 +125,7 @@ def main():
         save_ndjson(records, path)
         files[table] = path
         summary.append({"dataset": table, "source": source, "records": len(records)})
-        print(f"  saved {len(records):,} records to {path.relative_to(ROOT)}")
+        print(f"  saved {len(records):,} records to {path}")
 
     print("\nLoading into DuckDB...")
     load_into_duckdb(files)
@@ -133,7 +133,7 @@ def main():
     with open(RAW_DIR / "pull_summary.json", "w") as f:
         pulled_at = datetime.now(timezone.utc).isoformat()
         json.dump({"pulled_at": pulled_at, "datasets": summary}, f, indent=2)
-    print(f"\nDone. Database: {DB_PATH.relative_to(ROOT)}")
+    print(f"\nDone. Database: {DB_PATH}")
     print("Next: python -m shortagesignal.day1_explore")
 
 
