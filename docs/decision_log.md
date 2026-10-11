@@ -41,3 +41,10 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** a cloud dev environment defined in `.devcontainer/`, opened from the browser
 - **Why:** the laptop changes every 5 days. The environment and its packages live in the cloud and rebuild themselves from the repo, and the free tier covers this project
 - **Passed on:** reinstalling tools on every laptop, and a portable setup on a USB drive
+
+## 2026-10-11: Day 1 data findings
+- **Recalls:** 18,002 rows from June 2012. 51% carry an NDC, about 80% for 2024 to 2026
+- **Shortages:** 1,582 rows, but only 19 Resolved. The feed mostly keeps current shortages
+- **What changes:** history undercounts the recall to shortage link. Main historical view is current shortages preceded by a recall, and daily snapshots become the real history
+- **Reasons:** 56% start with a standard label, which needs case and spelling cleanup. Claude handles the rest
+- **Check next:** placeholder-looking 2012-01-01 dates, and counting shortages by drug, not rows
