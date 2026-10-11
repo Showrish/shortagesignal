@@ -1,0 +1,23 @@
+name: CI
+
+# Runs on every pull request and every change to main.
+# main is protected, so a pull request can only merge when this passes.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the project and dev tools
+        run: pip install -e ".[dev]"
+      - name: Lint (code style and common mistakes)
+        run: ruff check .
+      - name: Tests
+        run: pytest -q
