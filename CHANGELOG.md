@@ -7,3 +7,4 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - Project setup: package layout, CI with linting and tests, pull request template, git workflow, backlog script
 - Dev container, so the project opens ready to use in GitHub Codespaces
 - Day 1 modules to pull the full recall history and shortage list, and to explore them
+- Day 1 data findings in the decision log
