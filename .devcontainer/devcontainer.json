@@ -2,8 +2,9 @@
   "name": "ShortageSignal",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
   "features": {
+    "ghcr.io/devcontainers/features/node:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
   "postCreateCommand": "pip install -e \".[dev]\"",
   "forwardPorts": [8501],
