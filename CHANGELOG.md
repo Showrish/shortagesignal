@@ -3,6 +3,8 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-11
 ### Added
 - Project setup: package layout, CI with linting and tests, pull request template, git workflow, backlog script
 - Dev container, so the project opens ready to use in GitHub Codespaces
