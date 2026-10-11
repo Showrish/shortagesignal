@@ -77,3 +77,23 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** key each shortage row by package NDC, list type (shortage or discontinuation) and company, and merge rows FDA lists twice under the same key, recording the count in fda_listings
 - **Why:** the first real run found 30 duplicate NDC keys. The same package can sit on the shortage list and the discontinuation list at once, or be listed under two companies
 - **Passed on:** the package NDC alone
+
+## 2026-10-11: daily run on GitHub Actions
+- **Chose:** a scheduled GitHub Actions workflow at 12:00 UTC, plus a manual Run workflow button
+- **Why:** free for public repos, nothing to host, and it runs with every laptop off
+- **Passed on:** a cron job on a personal computer, and paid cloud schedulers
+
+## 2026-10-11: the data branch keeps only the latest data
+- **Chose:** each run force-pushes one commit with the current files to the data branch, and uploads a 30-day backup of that run's data
+- **Why:** Parquet files rewritten every day would bloat git history fast. The tables already keep their own history in the snapshots and recall versions
+- **Passed on:** normal commits on the data branch, and committing data to main
+
+## 2026-10-11: all-or-nothing runs
+- **Chose:** every run works on a staged copy and swaps the files in only if every step succeeds. A run log row gets written either way
+- **Why:** a failure halfway can never leave recalls updated but shortages stale
+- **Passed on:** writing each file as soon as its step finishes
+
+## 2026-10-11: lean shortage history, full current table
+- **Chose:** the daily history keeps 19 tracking columns, and today's full rows, including FDA's openfda block, go to shortages_current
+- **Why:** keeping every field every day would push the history file past GitHub's 100 MB file limit within months
+- **Passed on:** snapshotting every column

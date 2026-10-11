@@ -1,0 +1,75 @@
+name: Daily pipeline
+
+# Runs every day at 12:00 UTC (8 AM Boston in summer, 7 AM in winter),
+# and on demand from the Actions tab with "Run workflow".
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the run push to the data branch
+
+concurrency:
+  group: daily-pipeline   # never two runs at the same time
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHORTAGESIGNAL_DATA_DIR: ${{ github.workspace }}/datastore
+      OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the project
+        run: pip install -e .
+
+      - name: Get the data branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$url" data > /dev/null; then
+            git clone --quiet --depth 1 --branch data "$url" datastore
+          else
+            echo "No data branch yet, starting a new one"
+            git init --quiet -b data datastore
+            git -C datastore remote add origin "$url"
+          fi
+
+      - name: Run the pipeline
+        run: python -m shortagesignal.ingest
+
+      - name: Save to the data branch
+        if: always()
+        working-directory: datastore
+        run: |
+          rm -f ./*.tmp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # One commit holds the latest data. The tables keep their own history, so git doesn't need to.
+          git checkout --quiet --orphan latest
+          git add -A
+          if git commit --quiet -m "data: latest as of $(date -u '+%Y-%m-%d %H:%M') UTC"; then
+            git push --quiet --force origin latest:data
+          else
+            echo "Nothing to save"
+          fi
+
+      - name: Keep a 30-day backup of this run's data
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: data-${{ github.run_id }}
+          path: |
+            datastore
+            !datastore/.git
+          retention-days: 30
+          if-no-files-found: ignore

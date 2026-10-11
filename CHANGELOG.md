@@ -9,3 +9,4 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - Day 1 modules to pull the full recall history and shortage list, and to explore them
 - Day 1 data findings in the decision log
 - Daily ingestion: recalls merged from a 60-day window with a version history, dated shortage snapshots, weekly NDC directory refresh
+- Daily GitHub Actions run with a data branch, run log, 30-day backups and all-or-nothing updates

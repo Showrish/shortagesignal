@@ -31,6 +31,13 @@ python -m shortagesignal.ingest
 ```
 The first run loads the full recall history. After that, each run re-pulls the last 60 days of recalls and merges them in (keeping FDA's latest version plus a history of every change), saves a dated snapshot of the shortage list, and refreshes the NDC directory once a week. Data lands in `data/` as Parquet files.
 
+## Automation (Day 3)
+GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
+- **Data:** lives on the `data` branch, which always holds the latest files in one commit
+- **Run log:** `run_log.csv` on the `data` branch has one row per run, with counts and any error
+- **Backups:** each run's data is kept for 30 days as a download on that run's page
+- **Failures:** a failed run leaves the data exactly as it was, logs the error, and GitHub emails you
+
 ## Checks
 ```
 ruff check .
