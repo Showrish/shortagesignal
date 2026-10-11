@@ -11,14 +11,19 @@ Every run does three things:
      one day replaces that day's snapshot instead of counting it twice.
   3. NDC directory: refreshed once a week.
 
-Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping.
-DuckDB is only the engine that reads and writes those files.
+Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
+run_log.csv with one row per run. DuckDB is only the engine that reads and writes them.
+
+All or nothing: the run works on a staged copy of the files and only swaps them in if
+every step succeeds. A failed run leaves the data exactly as it was, and still logs a row.
 
 Run:  python -m shortagesignal.ingest
 """
+import csv
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -28,11 +33,13 @@ import duckdb
 import requests
 
 from shortagesignal.config import (
+    CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
     NDC_PATH,
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
+    RUN_LOG_PATH,
     SNAPSHOTS_PATH,
     STATE_PATH,
 )
@@ -46,6 +53,20 @@ NDC_COLUMNS = [
     "product_type", "marketing_category", "active_ingredients", "packaging",
     "marketing_start_date", "marketing_end_date", "listing_expiration_date", "finished",
 ]
+# The daily history keeps only these columns. Today's full rows go to shortages_current.
+SNAPSHOT_COLUMNS = [
+    "snapshot_date", "shortage_key", "list_type", "fda_listings", "package_ndc", "generic_name",
+    "company_name", "presentation", "dosage_form", "status", "availability", "shortage_reason",
+    "therapeutic_category", "initial_posting_date", "update_date", "update_type",
+    "discontinued_date", "change_date", "resolved_note",
+]
+RUN_LOG_COLUMNS = [
+    "run_at_utc", "status", "seconds", "recalls_mode", "recalls_pulled", "recalls_new",
+    "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
+    "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed", "error",
+]
+DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
+                               CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH, STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
@@ -126,12 +147,22 @@ def fetch_api(endpoint, search=None):
         time.sleep(0.3)   # be polite to the server
 
 
-def read_state():
-    return json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {}
+def read_state(path):
+    return json.loads(path.read_text()) if path.exists() else {}
 
 
-def write_state(state):
-    STATE_PATH.write_text(json.dumps(state, indent=2) + "\n")
+def write_state(state, path):
+    path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def append_run_log(path, row):
+    """Add one row per run to run_log.csv. GitHub shows CSV files as a table."""
+    new_file = not path.exists()
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=RUN_LOG_COLUMNS, restval="", extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 # ---------------------------------------------------------------- recalls
@@ -222,7 +253,7 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
 
 # ---------------------------------------------------------------- shortages
 
-def save_snapshot(con, records, path, today, workdir):
+def save_snapshot(con, records, path, current_path, today, workdir):
     """Store today's full shortage list as a dated snapshot and report what changed.
 
     Key: package NDC + list type + company. The same package can sit on the shortage
@@ -268,10 +299,18 @@ def save_snapshot(con, records, path, today, workdir):
         SELECT * EXCLUDE (rn) FROM ranked WHERE rn = 1
     """)
 
-    source = "SELECT * FROM shortage_today"
+    # Today's full rows, every column, replaced each run.
+    write_parquet(con, "SELECT * FROM shortage_today ORDER BY shortage_key", current_path)
+
+    # The daily history keeps the lean columns, so the file stays small for years.
+    today_columns = {c for (c,) in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'shortage_today'"
+    ).fetchall()}
+    lean = ", ".join(f'"{c}"' for c in SNAPSHOT_COLUMNS if c in today_columns)
+    source = f"SELECT {lean} FROM shortage_today"
     if path.exists():
         source = (f"SELECT * FROM read_parquet('{path.as_posix()}') WHERE snapshot_date <> {day} "
-                  "UNION ALL BY NAME SELECT * FROM shortage_today")
+                  f"UNION ALL BY NAME SELECT {lean} FROM shortage_today")
     con.execute(f"CREATE OR REPLACE TABLE shortage_snapshots AS {source}")
     write_parquet(con, "SELECT * FROM shortage_snapshots ORDER BY snapshot_date, shortage_key", path)
 
@@ -327,59 +366,109 @@ def save_ndc(con, records, path, workdir):
 
 # ---------------------------------------------------------------- run
 
-def main():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+def run(data_dir, now, stats):
+    """Do the whole run on a staged copy, then swap the files in only if every step worked."""
     today = now.date()
-    state = read_state()
     con = duckdb.connect()
-    manifest = None
+    try:
+        with tempfile.TemporaryDirectory() as workdir:
+            stage = Path(workdir) / "stage"
+            stage.mkdir()
+            for name in DATA_FILES:
+                if (data_dir / name).exists():
+                    shutil.copy2(data_dir / name, stage / name)
+            state_path = stage / STATE_PATH.name
+            state = read_state(state_path)
+            manifest = None
 
-    with tempfile.TemporaryDirectory() as workdir:
-        # 1. Recalls
-        if RECALLS_PATH.exists():
-            start = (today - timedelta(days=RECALL_WINDOW_DAYS)).strftime("%Y%m%d")
-            mode = f"last {RECALL_WINDOW_DAYS} days"
-            records = fetch_api("enforcement", search=f"report_date:[{start} TO {today:%Y%m%d}]")
-        else:
-            mode = "full history (first run)"
-            manifest = get_json(MANIFEST_URL)
-            records = from_bulk_files(manifest, "enforcement") or fetch_api("enforcement")
-        r = merge_recalls(con, records, RECALLS_PATH, RECALL_VERSIONS_PATH, today, now, workdir)
-        print(f"Recalls ({mode}): pulled {r['pulled']:,}, new {r['new']:,}, "
-              f"changed by FDA {r['changed']:,}, total {r['total']:,}, "
-              f"skipped without a recall number {r['no_number']}")
+            # 1. Recalls
+            recalls = stage / RECALLS_PATH.name
+            if recalls.exists():
+                start = (today - timedelta(days=RECALL_WINDOW_DAYS)).strftime("%Y%m%d")
+                mode = f"last {RECALL_WINDOW_DAYS} days"
+                records = fetch_api("enforcement", search=f"report_date:[{start} TO {today:%Y%m%d}]")
+            else:
+                mode = "full history (first run)"
+                manifest = get_json(MANIFEST_URL)
+                records = from_bulk_files(manifest, "enforcement") or fetch_api("enforcement")
+            r = merge_recalls(con, records, recalls, stage / RECALL_VERSIONS_PATH.name,
+                              today, now, workdir)
+            stats.update(recalls_mode=mode, recalls_pulled=r["pulled"], recalls_new=r["new"],
+                         recalls_changed=r["changed"], recalls_total=r["total"])
+            print(f"Recalls ({mode}): pulled {r['pulled']:,}, new {r['new']:,}, "
+                  f"changed by FDA {r['changed']:,}, total {r['total']:,}, "
+                  f"skipped without a recall number {r['no_number']}")
 
-        # 2. Shortages
-        records = fetch_api("shortages")
-        if not records:
-            raise RuntimeError("The shortage list came back empty. Stopping before saving anything.")
-        s = save_snapshot(con, records, SNAPSHOTS_PATH, today, workdir)
-        write_shortage_history(con, HISTORY_PATH)
-        if s["compared_to"] is None:
-            change = "first snapshot, nothing to compare yet"
-        else:
-            change = (f"vs {s['compared_to']}: new {s['new']}, dropped off {s['dropped']}, "
-                      f"status changes {s['status_changes']}")
-        print(f"Shortages ({today}): {s['rows']:,} rows "
-              f"({s['collapsed']} duplicate listings merged), {change}")
-
-        # 3. NDC directory, weekly
-        last = state.get("ndc_refreshed")
-        if NDC_PATH.exists() and last and (today - date.fromisoformat(last)).days < NDC_REFRESH_DAYS:
-            print(f"NDC directory: last refreshed {last}, skipping until it's {NDC_REFRESH_DAYS} days old")
-        else:
-            manifest = manifest or get_json(MANIFEST_URL)
-            records = from_bulk_files(manifest, "ndc")
+            # 2. Shortages
+            records = fetch_api("shortages")
             if not records:
-                raise RuntimeError("The NDC directory isn't in openFDA's bulk file list.")
-            n = save_ndc(con, records, NDC_PATH, workdir)
-            state["ndc_refreshed"] = today.isoformat()
-            print(f"NDC directory: refreshed, {n:,} products")
+                raise RuntimeError("The shortage list came back empty. Stopping before saving anything.")
+            s = save_snapshot(con, records, stage / SNAPSHOTS_PATH.name,
+                              stage / CURRENT_SHORTAGES_PATH.name, today, workdir)
+            write_shortage_history(con, stage / HISTORY_PATH.name)
+            stats.update(shortage_rows=s["rows"], shortages_new=s["new"],
+                         shortages_dropped=s["dropped"], shortage_status_changes=s["status_changes"],
+                         duplicate_listings_merged=s["collapsed"])
+            if s["compared_to"] is None:
+                change = "first snapshot, nothing to compare yet"
+            else:
+                change = (f"vs {s['compared_to']}: new {s['new']}, dropped off {s['dropped']}, "
+                          f"status changes {s['status_changes']}")
+            print(f"Shortages ({today}): {s['rows']:,} rows "
+                  f"({s['collapsed']} duplicate listings merged), {change}")
 
-    state["last_run"] = now.isoformat(timespec="seconds")
-    write_state(state)
-    con.close()
+            # 3. NDC directory, weekly
+            ndc = stage / NDC_PATH.name
+            last = state.get("ndc_refreshed")
+            if ndc.exists() and last and (today - date.fromisoformat(last)).days < NDC_REFRESH_DAYS:
+                stats["ndc_refreshed"] = "no"
+                print(f"NDC directory: last refreshed {last}, skipping until it's {NDC_REFRESH_DAYS} days old")
+            else:
+                manifest = manifest or get_json(MANIFEST_URL)
+                records = from_bulk_files(manifest, "ndc")
+                if not records:
+                    raise RuntimeError("The NDC directory isn't in openFDA's bulk file list.")
+                n = save_ndc(con, records, ndc, workdir)
+                state["ndc_refreshed"] = today.isoformat()
+                stats["ndc_refreshed"] = "yes"
+                print(f"NDC directory: refreshed, {n:,} products")
+
+            state["last_run"] = now.isoformat(timespec="seconds")
+            write_state(state, state_path)
+
+            # Every step worked, so swap the staged files in.
+            for name in DATA_FILES:
+                staged = stage / name
+                if staged.exists():
+                    tmp = data_dir / (name + ".tmp")
+                    shutil.copy2(staged, tmp)
+                    os.replace(tmp, data_dir / name)
+    finally:
+        con.close()
+
+
+def run_and_log(data_dir):
+    """Run once and add a row to run_log.csv, whether the run worked or not."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    started = time.monotonic()
+    stats = {}
+    status, error = "failed", "interrupted"
+    try:
+        run(data_dir, now, stats)
+        status, error = "success", ""
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"[:300]
+        raise
+    finally:
+        append_run_log(data_dir / RUN_LOG_PATH.name, {
+            "run_at_utc": now.isoformat(timespec="seconds"), "status": status,
+            "seconds": round(time.monotonic() - started, 1), **stats, "error": error,
+        })
+
+
+def main():
+    run_and_log(DATA_DIR)
     print(f"\nDone. Files are in {DATA_DIR}")
 
 
