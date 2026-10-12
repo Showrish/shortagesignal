@@ -157,3 +157,18 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** tracked counts warn when they jump past twice their usual level by more than 20, or drop to zero after five busy runs in a row
 - **Why:** a check that suddenly finds nothing can mean a broken check, not clean data
 - **Passed on:** fixed limits, which go stale as the data grows
+
+## 2026-10-12: a hand audit of 200 random recalls as the answer key
+- **Chose:** 200 recalls picked at random with a fixed seed, reviewed by hand in a spreadsheet next to what the pipeline concluded
+- **Why:** the only way to know how often the pipeline is right is to check it against a person. The fixed seed means anyone can rebuild the same sample
+- **Passed on:** spot-checking interesting examples, which leans toward the easy cases
+
+## 2026-10-12: a fixed list of 12 root causes
+- **Chose:** 12 root-cause categories with written definitions, picked from a dropdown
+- **Why:** the same categories become the labels Claude gets scored against on Day 8, so they have to be consistent
+- **Passed on:** writing causes in free text
+
+## 2026-10-12: NDC checks in the audit are automatic except the leftovers
+- **Chose:** the audit sheet lists the NDCs found in the text, plus any code-like numbers the extractor skipped. ndc_ok gets filled in automatically when nothing is left over, so a person only checks rows with leftovers
+- **Why:** some recalls list 10 to 15 NDCs, and comparing them by eye is slow and error-prone. The part that needs judgment is deciding whether a leftover number is a missed NDC or something like a lot number
+- **Passed on:** checking every code by hand
