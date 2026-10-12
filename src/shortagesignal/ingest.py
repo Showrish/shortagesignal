@@ -12,6 +12,7 @@ Every run does three things:
   3. NDC directory: refreshed once a week.
   4. Matching IDs: normalized NDCs and firm keys for recalls, shortages and the
      NDC directory (see identify.py).
+  5. Matching: a drug identity for every recall, and links to shortages (see match.py).
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
 run_log.csv with one row per run. DuckDB is only the engine that reads and writes them.
@@ -38,17 +39,22 @@ from shortagesignal.config import (
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
+    LINKS_PATH,
     NDC_DIRECTORY_PATH,
     NDC_PATH,
+    RECALL_DRUGS_PATH,
     RECALL_IDS_PATH,
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
     RUN_LOG_PATH,
+    SHORTAGE_DRUGS_PATH,
     SHORTAGE_IDS_PATH,
     SNAPSHOTS_PATH,
     STATE_PATH,
+    UNMATCHED_PATH,
 )
 from shortagesignal.identify import build_ids
+from shortagesignal.match import build_matches
 from shortagesignal.pull_full_history import API_KEY, API_URL, HEADERS, MANIFEST_URL
 from shortagesignal.pull_full_history import from_bulk_files, get_json
 from shortagesignal.storage import flatten, load_batch, write_parquet
@@ -71,12 +77,14 @@ RUN_LOG_COLUMNS = [
     "run_at_utc", "status", "seconds", "recalls_mode", "recalls_pulled", "recalls_new",
     "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
     "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
-    "recalls_with_ndc_pct", "shortages_with_ndc_pct", "error",
+    "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
+    "recalls_unmatched", "recalls_linked", "shortages_linked", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
                                NDC_DIRECTORY_PATH, RECALL_IDS_PATH, SHORTAGE_IDS_PATH,
-                               STATE_PATH)]
+                               RECALL_DRUGS_PATH, SHORTAGE_DRUGS_PATH, LINKS_PATH,
+                               UNMATCHED_PATH, STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
@@ -410,7 +418,7 @@ def run(data_dir, now, stats):
                 print(f"NDC directory: refreshed, {n:,} products")
 
             # 4. Matching IDs: normalized NDCs and firm keys
-            ids = build_ids(con, ndc, recalls, stage / CURRENT_SHORTAGES_PATH.name, {
+            ids = build_ids(con, ndc, recalls, stage / SNAPSHOTS_PATH.name, {
                 "ndc_directory": stage / NDC_DIRECTORY_PATH.name,
                 "recall_ids": stage / RECALL_IDS_PATH.name,
                 "shortage_ids": stage / SHORTAGE_IDS_PATH.name,
@@ -421,6 +429,25 @@ def run(data_dir, now, stats):
                   f"({ids['recalls_with_ndc_pct']}%) and {ids['shortages_with_ndc']:,} of "
                   f"{ids['shortages']:,} shortage listings ({ids['shortages_with_ndc_pct']}%), "
                   f"{ids['directory_packages']:,} directory packages")
+
+            # 5. Matching: which drug each recall is about, and which shortages share it
+            m = build_matches(con, {
+                "ndc": ndc, "recalls": recalls,
+                "recall_ids": stage / RECALL_IDS_PATH.name,
+                "shortage_ids": stage / SHORTAGE_IDS_PATH.name,
+                "snapshots": stage / SNAPSHOTS_PATH.name,
+                "recall_drugs": stage / RECALL_DRUGS_PATH.name,
+                "shortage_drugs": stage / SHORTAGE_DRUGS_PATH.name,
+                "links": stage / LINKS_PATH.name,
+                "unmatched": stage / UNMATCHED_PATH.name,
+            }, workdir)
+            stats.update(recalls_identified_pct=m["identified_pct"], recalls_unmatched=m["unmatched"],
+                         recalls_linked=m["linked_recalls"], shortages_linked=m["linked_shortages"])
+            levels = ", ".join(f"{name.replace('_', ' ')} {n:,}" for name, n in m["by_level"].items())
+            print(f"Matching: identified {m['identified']:,} of {m['recalls']:,} recalls "
+                  f"({m['identified_pct']}%), {m['unmatched']:,} unmatched. Linked "
+                  f"{m['linked_recalls']:,} recalls to {m['linked_shortages']:,} of "
+                  f"{m['shortages']:,} shortage listings by their strongest match: {levels}")
 
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)

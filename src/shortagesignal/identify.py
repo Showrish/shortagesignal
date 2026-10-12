@@ -4,7 +4,7 @@ can match them.
 
   recall_ids     one row per recall and NDC found, plus the recall's firm key.
                  A recall with no NDC still gets one row, so its firm key is there.
-  shortage_ids   the same for each shortage listing
+  shortage_ids   the same for every shortage listing ever seen in the snapshots
   ndc_directory  one row per package in FDA's NDC directory, with product code and firm key
 
 NDCs come out as ndc11 (package, 5-4-2) and ndc9 (product, 5-4). See ndc.py.
@@ -95,7 +95,7 @@ def ids_for(firm, text, openfda_text, lookup):
     return rows or [{"firm_key": key, "ndc11": None, "ndc9": None, "source": "none"}]
 
 
-def build_ids(con, ndc_path, recalls_path, current_path, out, workdir):
+def build_ids(con, ndc_path, recalls_path, snapshots_path, out, workdir):
     """Build the three ID tables. out maps table name to output path. Returns coverage stats."""
     products = con.execute(f"""
         SELECT product_ndc, labeler_name, generic_name, dosage_form, packaging
@@ -110,9 +110,11 @@ def build_ids(con, ndc_path, recalls_path, current_path, out, workdir):
     sources = [
         ("recall", "recall_number", recalls_path,
          "SELECT recall_number, recalling_firm, product_description, openfda FROM read_parquet('{p}')"),
-        ("shortage", "shortage_key", current_path,
-         "SELECT shortage_key, company_name, concat_ws(' ', package_ndc, presentation), openfda "
-         "FROM read_parquet('{p}')"),
+        # Every listing ever seen, so shortages that dropped off FDA's list keep their IDs.
+        ("shortage", "shortage_key", snapshots_path,
+         "SELECT shortage_key, arg_max(company_name, snapshot_date), "
+         "concat_ws(' ', arg_max(package_ndc, snapshot_date), arg_max(presentation, snapshot_date)), "
+         "NULL FROM read_parquet('{p}') GROUP BY shortage_key"),
     ]
     for kind, id_col, path, query in sources:
         rows = []

@@ -38,6 +38,14 @@ Every run also builds three ID tables, so recalls and shortages can be matched:
 
 NDCs always come out in one format: `ndc11` for the package (like 00409-4888-10) and `ndc9` for the product (like 00409-4888).
 
+## Matching (Day 5)
+Every run matches recalls to shortages:
+- `recall_drugs`: which drug each recall is about, and how we know (NDC directory, FDA's openfda block, or the drug name in the description)
+- `recall_shortage_links`: every recall and shortage listing that share a drug, labeled by strength: package, product, drug and firm, or drug
+- `unmatched_recalls`: recalls with no NDC and no recognizable drug name, the work queue for the AI step
+
+Two separate numbers come out of it. **Identified** means we know which drug a recall is about. **Linked** means that drug also shows up on the shortage list. Most recalls never link, and that's normal.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
