@@ -117,3 +117,28 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** NDC and company name parsing written in Python with unit tests, while joins and counts stay in SQL
 - **Why:** layout rules are clearer and easier to test in Python, and matching tables is what SQL is for
 - **Passed on:** regex-only parsing inside SQL
+
+## 2026-10-12: identified and linked are two separate numbers
+- **Chose:** report how many recalls we can identify (we know which drug it is) separately from how many link to a shortage
+- **Why:** most recalled drugs never go short, so a low link rate is normal. A low identification rate is the real data problem
+- **Passed on:** one combined match rate
+
+## 2026-10-12: four link strengths, keep the strongest
+- **Chose:** link by package NDC, product NDC, same drug and company, or same drug from any company, keeping the strongest link for each recall and shortage pair
+- **Why:** a shortage is about the drug, not one company's package. Stronger links are more certain, and the level says how sure each one is
+- **Passed on:** NDC-only links, which would miss every recall without an NDC
+
+## 2026-10-12: a name from the text only counts if the drug exists
+- **Chose:** a drug name taken from a recall's description counts only if it's a generic name in the NDC directory or on the shortage list, or a known brand name
+- **Why:** descriptions start with all sorts of text, and checking against known drugs keeps junk out
+- **Passed on:** trusting whatever phrase a description starts with
+
+## 2026-10-12: drug keys keep salts and drop forms
+- **Chose:** drug names lose form, strength and packaging words but keep salts, so clindamycin phosphate and clindamycin palmitate stay different
+- **Why:** different salts are often different products, like an injection and an oral liquid
+- **Passed on:** stripping salts too
+
+## 2026-10-12: shortage IDs from every listing ever seen
+- **Chose:** shortage IDs and drug keys come from all the snapshots, not just today's list
+- **Why:** a shortage that drops off FDA's list still needs to match the recalls from before it resolved
+- **Passed on:** today's list only
