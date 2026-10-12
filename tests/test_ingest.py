@@ -6,7 +6,8 @@ import duckdb
 import pytest
 
 from shortagesignal import ingest
-from shortagesignal.ingest import append_run_log, flatten, merge_recalls, save_snapshot
+from shortagesignal.ingest import append_run_log, merge_recalls, save_snapshot
+from shortagesignal.storage import flatten
 
 
 def test_flatten_turns_nested_fields_into_text():
@@ -120,6 +121,19 @@ def test_run_log_writes_header_once(tmp_path):
         rows = list(csv.DictReader(f))
     assert [r["status"] for r in rows] == ["success", "failed"]
     assert rows[1]["error"] == "boom"
+
+
+def test_run_log_upgrades_an_old_header(tmp_path):
+    log = tmp_path / "run_log.csv"
+    log.write_text("run_at_utc,status\n2026-10-11T12:00:00,success\n")
+    append_run_log(log, {"run_at_utc": "2026-10-12T12:00:00", "status": "success",
+                         "recalls_with_ndc_pct": "60.1"})
+    with open(log, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert reader.fieldnames == ingest.RUN_LOG_COLUMNS
+    assert [r["run_at_utc"] for r in rows] == ["2026-10-11T12:00:00", "2026-10-12T12:00:00"]
+    assert rows[1]["recalls_with_ndc_pct"] == "60.1"
 
 
 def test_failed_run_keeps_old_data_and_logs_the_failure(tmp_path, monkeypatch):

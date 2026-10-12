@@ -10,6 +10,8 @@ Every run does three things:
   2. Shortages: save today's full shortage list as a dated snapshot. Running twice in
      one day replaces that day's snapshot instead of counting it twice.
   3. NDC directory: refreshed once a week.
+  4. Matching IDs: normalized NDCs and firm keys for recalls, shortages and the
+     NDC directory (see identify.py).
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
 run_log.csv with one row per run. DuckDB is only the engine that reads and writes them.
@@ -36,15 +38,20 @@ from shortagesignal.config import (
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
+    NDC_DIRECTORY_PATH,
     NDC_PATH,
+    RECALL_IDS_PATH,
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
     RUN_LOG_PATH,
+    SHORTAGE_IDS_PATH,
     SNAPSHOTS_PATH,
     STATE_PATH,
 )
+from shortagesignal.identify import build_ids
 from shortagesignal.pull_full_history import API_KEY, API_URL, HEADERS, MANIFEST_URL
 from shortagesignal.pull_full_history import from_bulk_files, get_json
+from shortagesignal.storage import flatten, load_batch, write_parquet
 
 RECALL_WINDOW_DAYS = 60   # FDA sometimes corrects past reports, so re-pull a safety window
 NDC_REFRESH_DAYS = 7
@@ -63,59 +70,16 @@ SNAPSHOT_COLUMNS = [
 RUN_LOG_COLUMNS = [
     "run_at_utc", "status", "seconds", "recalls_mode", "recalls_pulled", "recalls_new",
     "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
-    "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed", "error",
+    "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
+    "recalls_with_ndc_pct", "shortages_with_ndc_pct", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
-                               CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH, STATE_PATH)]
+                               CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
+                               NDC_DIRECTORY_PATH, RECALL_IDS_PATH, SHORTAGE_IDS_PATH,
+                               STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
-
-def flatten(records):
-    """Turn every value into text, with nested fields as JSON strings.
-
-    The shape of nested fields changes from pull to pull, which breaks merging old and
-    new data. As text, the columns look the same every time, and SQL can still parse
-    the JSON later when it's needed.
-    """
-    rows, columns = [], set()
-    for rec in records:
-        row = {}
-        for key, value in rec.items():
-            if isinstance(value, (dict, list)):
-                row[key] = json.dumps(value, sort_keys=True)
-            elif value is None:
-                row[key] = None
-            else:
-                row[key] = str(value)
-        rows.append(row)
-        columns.update(row)
-    return rows, sorted(columns)
-
-
-def load_batch(con, rows, columns, name, workdir, extra=""):
-    """Load rows into a DuckDB table where every column is text."""
-    path = Path(workdir) / f"{name}.ndjson"
-    with open(path, "w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row) + "\n")
-    spec = ", ".join(f"'{c}': 'VARCHAR'" for c in columns)
-    extra_cols = f", {extra}" if extra else ""
-    con.execute(f"""
-        CREATE OR REPLACE TABLE {name} AS
-        SELECT *{extra_cols}
-        FROM read_json('{path.as_posix()}',
-                       format = 'newline_delimited',
-                       columns = {{{spec}}})
-    """)
-
-
-def write_parquet(con, query, path):
-    """Write a query result to Parquet via a temp file, so a crash never leaves half a file."""
-    tmp = path.with_name(path.name + ".tmp")
-    con.execute(f"COPY ({query}) TO '{tmp.as_posix()}' (FORMAT PARQUET)")
-    os.replace(tmp, path)
-
 
 def fetch_api(endpoint, search=None):
     """Page through the live API. Returns an empty list when the search matches nothing."""
@@ -156,12 +120,24 @@ def write_state(state, path):
 
 
 def append_run_log(path, row):
-    """Add one row per run to run_log.csv. GitHub shows CSV files as a table."""
-    new_file = not path.exists()
-    with open(path, "a", newline="", encoding="utf-8") as f:
+    """Add one row per run to run_log.csv. GitHub shows CSV files as a table.
+
+    If the columns changed since the file was started, it gets rewritten with the new
+    header. Old rows keep their values, with blanks in the new columns.
+    """
+    old_rows, header_ok = [], False
+    if path.exists():
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            header_ok = reader.fieldnames == RUN_LOG_COLUMNS
+            if not header_ok:
+                old_rows = list(reader)
+    mode = "a" if header_ok else "w"
+    with open(path, mode, newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=RUN_LOG_COLUMNS, restval="", extrasaction="ignore")
-        if new_file:
+        if not header_ok:
             writer.writeheader()
+            writer.writerows(old_rows)
         writer.writerow(row)
 
 
@@ -432,6 +408,19 @@ def run(data_dir, now, stats):
                 state["ndc_refreshed"] = today.isoformat()
                 stats["ndc_refreshed"] = "yes"
                 print(f"NDC directory: refreshed, {n:,} products")
+
+            # 4. Matching IDs: normalized NDCs and firm keys
+            ids = build_ids(con, ndc, recalls, stage / CURRENT_SHORTAGES_PATH.name, {
+                "ndc_directory": stage / NDC_DIRECTORY_PATH.name,
+                "recall_ids": stage / RECALL_IDS_PATH.name,
+                "shortage_ids": stage / SHORTAGE_IDS_PATH.name,
+            }, workdir)
+            stats.update(recalls_with_ndc_pct=ids["recalls_with_ndc_pct"],
+                         shortages_with_ndc_pct=ids["shortages_with_ndc_pct"])
+            print(f"IDs: NDC found for {ids['recalls_with_ndc']:,} of {ids['recalls']:,} recalls "
+                  f"({ids['recalls_with_ndc_pct']}%) and {ids['shortages_with_ndc']:,} of "
+                  f"{ids['shortages']:,} shortage listings ({ids['shortages_with_ndc_pct']}%), "
+                  f"{ids['directory_packages']:,} directory packages")
 
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)

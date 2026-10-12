@@ -31,6 +31,13 @@ python -m shortagesignal.ingest
 ```
 The first run loads the full recall history. After that, each run re-pulls the last 60 days of recalls and merges them in (keeping FDA's latest version plus a history of every change), saves a dated snapshot of the shortage list, and refreshes the NDC directory once a week. Data lands in `data/` as Parquet files.
 
+## Matching IDs (Day 4)
+Every run also builds three ID tables, so recalls and shortages can be matched:
+- `recall_ids` and `shortage_ids`: every NDC found for each recall or shortage listing, from the text, FDA's openfda block, or the NDC directory for dash-less codes, plus a cleaned company name
+- `ndc_directory`: one row per package in FDA's NDC directory
+
+NDCs always come out in one format: `ndc11` for the package (like 00409-4888-10) and `ndc9` for the product (like 00409-4888).
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
