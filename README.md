@@ -46,6 +46,13 @@ Every run matches recalls to shortages:
 
 Two separate numbers come out of it. **Identified** means we know which drug a recall is about. **Linked** means that drug also shows up on the shortage list. Most recalls never link, and that's normal.
 
+## Data checks (Day 6)
+Every run ends with 16 checks, before anything gets saved:
+- **Errors** stop the run and keep yesterday's data: duplicate keys, a field FDA stopped sending, the recall table shrinking, the shortage list collapsing, or a badly formatted NDC. GitHub emails you
+- **Warnings** let the run save but flag it on the run page: stale data, unknown statuses, a drop in the identified rate, and counts that spike or suddenly go to zero
+
+Results land in `check_log.csv`, one row per check per run.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
