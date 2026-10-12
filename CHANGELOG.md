@@ -3,6 +3,8 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-10-12
 ### Added
 - Matching IDs: NDCs normalized to 11 digits from text, openfda and the NDC directory, plus firm keys
 - Matching: a drug identity for every recall, links to shortages at four strengths, and an unmatched recalls table
