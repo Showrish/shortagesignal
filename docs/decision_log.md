@@ -97,3 +97,23 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** the daily history keeps 19 tracking columns, and today's full rows, including FDA's openfda block, go to shortages_current
 - **Why:** keeping every field every day would push the history file past GitHub's 100 MB file limit within months
 - **Passed on:** snapshotting every column
+
+## 2026-10-12: NDCs normalized to 11 digits, matched at product level
+- **Chose:** convert every NDC to the 11-digit 5-4-2 form (ndc11), and keep its labeler and product part (ndc9) for matching
+- **Why:** FDA writes NDCs in three 10-digit layouts, so the same package can look different in two datasets. Product level matches the same drug across package sizes
+- **Passed on:** matching NDCs as raw text
+
+## 2026-10-12: short and dash-less NDCs only count after the word NDC
+- **Chose:** two-part product codes and dash-less codes are only read right after "NDC". Dash-less 10-digit codes get their layout from the NDC directory, and ones that fit two packages are skipped
+- **Why:** two-part codes look like lot numbers, and 10 dash-less digits fit three different layouts
+- **Passed on:** reading every number that looks like a code
+
+## 2026-10-12: firm keys
+- **Chose:** company names uppercased, with punctuation, legal words (Inc, LLC, Ltd) and filler words (Pharmaceuticals, Laboratories, USA) removed
+- **Why:** "Pfizer Inc." and "PFIZER INC" are the same company and need the same key
+- **Passed on:** fuzzy matching for now. Day 5 decides whether it's needed
+
+## 2026-10-12: parsing in Python, joins in SQL
+- **Chose:** NDC and company name parsing written in Python with unit tests, while joins and counts stay in SQL
+- **Why:** layout rules are clearer and easier to test in Python, and matching tables is what SQL is for
+- **Passed on:** regex-only parsing inside SQL

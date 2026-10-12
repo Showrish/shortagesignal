@@ -3,6 +3,8 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+### Added
+- Matching IDs: NDCs normalized to 11 digits from text, openfda and the NDC directory, plus firm keys
 
 ## [0.1.0] - 2026-10-11
 ### Added
