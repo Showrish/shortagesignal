@@ -53,6 +53,13 @@ Every run ends with 16 checks, before anything gets saved:
 
 Results land in `check_log.csv`, one row per check per run.
 
+## Hand audit (Day 7)
+```
+python -m shortagesignal.audit sample
+python -m shortagesignal.audit score
+```
+`sample` puts 200 random recalls (the same 200 every time) into `audit/audit_sheet.xlsx`, next to what the pipeline concluded. Fill in the yellow columns, then `score` turns the answers into `audit/answer_key.csv`, the answer key for scoring Claude, and `audit/audit_results.md`, which says how often the pipeline was right.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit

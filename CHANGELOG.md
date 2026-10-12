@@ -7,6 +7,7 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - Matching IDs: NDCs normalized to 11 digits from text, openfda and the NDC directory, plus firm keys
 - Matching: a drug identity for every recall, links to shortages at four strengths, and an unmatched recalls table
 - Data checks: 16 checks per run. Errors stop the run, warnings show on the run page, and the history goes to check_log.csv
+- Hand audit tool: a 200-recall review sheet, and scoring that turns it into an answer key
 
 ## [0.1.0] - 2026-10-11
 ### Added

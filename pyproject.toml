@@ -9,6 +9,7 @@ description = "Tracks FDA drug recalls and shortages and links the two"
 requires-python = ">=3.10"
 dependencies = [
     "duckdb>=1.1",
+    "openpyxl>=3.1",
     "requests>=2.31",
 ]
 
