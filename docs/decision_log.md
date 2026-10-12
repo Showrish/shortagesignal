@@ -142,3 +142,18 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** shortage IDs and drug keys come from all the snapshots, not just today's list
 - **Why:** a shortage that drops off FDA's list still needs to match the recalls from before it resolved
 - **Passed on:** today's list only
+
+## 2026-10-12: two kinds of data checks
+- **Chose:** error checks stop the run and keep yesterday's data, while warning checks let the run save and flag the problem
+- **Why:** broken data, like duplicates or a field FDA stopped sending, must never be saved. Stale or unusual data still beats no data
+- **Passed on:** stopping on every oddity, which would block the shortage snapshot over one slow week at FDA
+
+## 2026-10-12: GitHub's failure email as the alert
+- **Chose:** a failed check fails the run, and GitHub's built-in failure email does the alerting. Warnings show on the run page and in check_log.csv
+- **Why:** it works with zero setup and no passwords stored anywhere. The weekly digest on Day 12 will summarize the warnings
+- **Passed on:** a custom email on every run
+
+## 2026-10-12: spike and silence rules
+- **Chose:** tracked counts warn when they jump past twice their usual level by more than 20, or drop to zero after five busy runs in a row
+- **Why:** a check that suddenly finds nothing can mean a broken check, not clean data
+- **Passed on:** fixed limits, which go stale as the data grows

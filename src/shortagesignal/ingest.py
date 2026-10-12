@@ -13,6 +13,8 @@ Every run does three things:
   4. Matching IDs: normalized NDCs and firm keys for recalls, shortages and the
      NDC directory (see identify.py).
   5. Matching: a drug identity for every recall, and links to shortages (see match.py).
+  6. Data checks: a failed error check stops the run before anything is saved
+     (see checks.py).
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
 run_log.csv with one row per run. DuckDB is only the engine that reads and writes them.
@@ -35,7 +37,9 @@ from pathlib import Path
 import duckdb
 import requests
 
+from shortagesignal.checks import collect_checks, last_good_run, read_history, report
 from shortagesignal.config import (
+    CHECK_LOG_PATH,
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
@@ -78,7 +82,8 @@ RUN_LOG_COLUMNS = [
     "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
     "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
-    "recalls_unmatched", "recalls_linked", "shortages_linked", "error",
+    "recalls_unmatched", "recalls_linked", "shortages_linked", "checks_warned",
+    "checks_failed", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
@@ -451,6 +456,19 @@ def run(data_dir, now, stats):
 
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)
+
+            # 6. Data checks. A failed error check stops the run before anything is saved.
+            checks = collect_checks(con, {
+                "recalls": recalls,
+                "snapshots": stage / SNAPSHOTS_PATH.name,
+                "recall_ids": stage / RECALL_IDS_PATH.name,
+                "shortage_ids": stage / SHORTAGE_IDS_PATH.name,
+                "ndc_directory": stage / NDC_DIRECTORY_PATH.name,
+            }, stats, state, today, now, last_good_run(data_dir / RUN_LOG_PATH.name),
+                read_history(data_dir / CHECK_LOG_PATH.name))
+            stats["checks_failed"] = sum(c.status == "fail" for c in checks)
+            stats["checks_warned"] = sum(c.status == "warn" for c in checks)
+            report(checks, data_dir / CHECK_LOG_PATH.name, now.isoformat(timespec="seconds"))
 
             # Every step worked, so swap the staged files in.
             for name in DATA_FILES:
