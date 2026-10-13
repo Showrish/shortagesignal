@@ -60,6 +60,16 @@ python -m shortagesignal.audit score
 ```
 `sample` puts 200 random recalls (the same 200 every time) into `audit/audit_sheet.xlsx`, next to what the pipeline concluded. Fill in the yellow columns, then `score` turns the answers into `audit/answer_key.csv`, the answer key for scoring Claude, and `audit/audit_results.md`, which says how often the pipeline was right.
 
+## Root causes (Day 8)
+```
+python -m shortagesignal.run_sql sql/root_cause_rules.sql
+python -m shortagesignal.tagging rules
+python -m shortagesignal.tagging eval
+```
+Every recall gets one of 12 root causes. The rules in `sql/root_cause_rules.sql` go first. Whatever they can't tag goes to Claude Haiku, which has to answer through a tool that only allows the 12 names. Answers are cached, unsure ones (low or medium confidence) land in `tag_review.csv`, and `tagging eval` scores the rules, Claude, and both together against the hand audit.
+
+`run_sql` runs any SQL file against the project's tables by short name, like `FROM recalls`.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit

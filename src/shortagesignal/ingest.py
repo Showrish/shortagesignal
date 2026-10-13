@@ -13,7 +13,9 @@ Every run does three things:
   4. Matching IDs: normalized NDCs and firm keys for recalls, shortages and the
      NDC directory (see identify.py).
   5. Matching: a drug identity for every recall, and links to shortages (see match.py).
-  6. Data checks: a failed error check stops the run before anything is saved
+  6. Root causes: rules first, then Claude Haiku for what the rules can't tag
+     (see tagging.py). Claude is only called when SHORTAGESIGNAL_USE_CLAUDE=1.
+  7. Data checks: a failed error check stops the run before anything is saved
      (see checks.py).
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
@@ -40,6 +42,7 @@ import requests
 from shortagesignal.checks import collect_checks, last_good_run, read_history, report
 from shortagesignal.config import (
     CHECK_LOG_PATH,
+    CLAUDE_TAGS_PATH,
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
@@ -50,15 +53,18 @@ from shortagesignal.config import (
     RECALL_IDS_PATH,
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
+    ROOT_CAUSES_PATH,
     RUN_LOG_PATH,
     SHORTAGE_DRUGS_PATH,
     SHORTAGE_IDS_PATH,
     SNAPSHOTS_PATH,
     STATE_PATH,
+    TAG_REVIEW_PATH,
     UNMATCHED_PATH,
 )
 from shortagesignal.identify import build_ids
 from shortagesignal.match import build_matches
+from shortagesignal.tagging import build_root_causes, make_client
 from shortagesignal.pull_full_history import API_KEY, API_URL, HEADERS, MANIFEST_URL
 from shortagesignal.pull_full_history import from_bulk_files, get_json
 from shortagesignal.storage import flatten, load_batch, write_parquet
@@ -82,14 +88,15 @@ RUN_LOG_COLUMNS = [
     "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
     "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
-    "recalls_unmatched", "recalls_linked", "shortages_linked", "checks_warned",
-    "checks_failed", "error",
+    "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_tagged_pct",
+    "tag_backlog", "claude_calls", "claude_cost_usd", "checks_warned", "checks_failed", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
                                NDC_DIRECTORY_PATH, RECALL_IDS_PATH, SHORTAGE_IDS_PATH,
                                RECALL_DRUGS_PATH, SHORTAGE_DRUGS_PATH, LINKS_PATH,
-                               UNMATCHED_PATH, STATE_PATH)]
+                               UNMATCHED_PATH, ROOT_CAUSES_PATH, CLAUDE_TAGS_PATH,
+                               TAG_REVIEW_PATH, STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
@@ -454,10 +461,24 @@ def run(data_dir, now, stats):
                   f"{m['linked_recalls']:,} recalls to {m['linked_shortages']:,} of "
                   f"{m['shortages']:,} shortage listings by their strongest match: {levels}")
 
+            # 6. Root causes: rules first, then Claude for the rest (only when switched on)
+            client = make_client() if os.getenv("SHORTAGESIGNAL_USE_CLAUDE") == "1" else None
+            t = build_root_causes(recalls, stage / CLAUDE_TAGS_PATH.name,
+                                  stage / ROOT_CAUSES_PATH.name, stage / TAG_REVIEW_PATH.name,
+                                  workdir, client=client)
+            stats.update(recalls_tagged_pct=t["tagged_pct"], tag_backlog=t["backlog"],
+                         claude_calls=t["claude_calls"], claude_cost_usd=t["claude_cost"])
+            note = (f"{t['claude_calls']:,} new Claude calls (about ${t['claude_cost']:.2f})"
+                    if client else "Claude off for this run")
+            print(f"Root causes: tagged {t['tagged']:,} of {t['recalls']:,} recalls "
+                  f"({t['tagged_pct']}%), {t['by_rule']:,} by rules and {t['by_claude']:,} by "
+                  f"Claude, {t['backlog']:,} still waiting. {note}. "
+                  f"{t['to_review']} unsure tags to review")
+
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)
 
-            # 6. Data checks. A failed error check stops the run before anything is saved.
+            # 7. Data checks. A failed error check stops the run before anything is saved.
             checks = collect_checks(con, {
                 "recalls": recalls,
                 "snapshots": stage / SNAPSHOTS_PATH.name,
