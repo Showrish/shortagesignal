@@ -3,6 +3,8 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+### Added
+- Root-cause tagging: SQL rules first, Claude Haiku for the rest, cached answers, a review list, and an evaluation against the hand audit
 
 ## [0.2.0] - 2026-10-12
 ### Added

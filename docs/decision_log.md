@@ -172,3 +172,29 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** the audit sheet lists the NDCs found in the text, plus any code-like numbers the extractor skipped. ndc_ok gets filled in automatically when nothing is left over, so a person only checks rows with leftovers
 - **Why:** some recalls list 10 to 15 NDCs, and comparing them by eye is slow and error-prone. The part that needs judgment is deciding whether a leftover number is a missed NDC or something like a lot number
 - **Passed on:** checking every code by hand
+
+## 2026-10-13: rules first, Claude for the rest
+- **Chose:** SQL keyword rules tag what they can, and Claude Haiku only tags what the rules leave as NULL
+- **Why:** rules are free, instant and easy to check. Claude handles the vague and unusual reasons, which is exactly where rules fail
+- **Passed on:** sending every recall to Claude
+
+## 2026-10-13: Claude answers through a tool
+- **Chose:** Claude has to answer by calling a tool whose schema only allows the 12 category names, plus a confidence level
+- **Why:** the answer is always one of the categories, so there's nothing to parse or clean up
+- **Passed on:** free-text answers
+
+## 2026-10-13: Claude gets the same rulebook as the hand audit
+- **Chose:** the prompt includes the 12 definitions and the same tie-breaking rules used in the audit
+- **Why:** Claude gets scored against the audit, so it should follow the same rules
+- **Passed on:** letting Claude decide on its own what each category means
+
+## 2026-10-13: Claude only runs in GitHub Actions
+- **Chose:** the daily run calls Claude only when SHORTAGESIGNAL_USE_CLAUDE=1, which only the scheduled workflow sets. Answers are cached by recall number and reason text, and each run has a time budget
+- **Why:** local test runs never spend money by accident, a recall is never sent twice, and the history backlog gets worked through over a few runs
+- **Passed on:** tagging the whole history in one local run
+
+## 2026-10-13: precautionary CGMP recalls, and re-checking the answer key
+- **Chose:** recalls FDA labeled CGMP that only describe a risk ("manufactured under the same conditions as...", "conditions that could...", "potential contamination") stay CGMP, in both the rules and Claude's prompt. Claude's medium-confidence answers go to the review sheet too. After the first scoring, every row where the rules or Claude disagreed with my labels was re-checked against the written audit rules, with Claude suggesting the fixes, not against the taggers' answers. Labels that broke those rules were corrected, and the ones that held up led to the new rules.
+- **Why:** nothing was found in a precautionary recall's product, so naming a specific defect overstates what happened. Medium-confidence answers were right only 7 of 15 times. Checking labels against the written rules keeps the answer key consistent without bending it toward the taggers.
+- **Passed on:** leaving known slips in the answer key, and changing labels just to match the taggers
+- **Caveat:** the rules were tuned on these same 99 rows, so their score on them is optimistic. Fresh hand labels are the honest test.

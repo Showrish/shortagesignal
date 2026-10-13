@@ -1,6 +1,6 @@
 # Hand audit results
 
-Audited 99 of 200 sampled recalls, scored on 2026-10-12.
+Audited 99 of 200 sampled recalls, scored on 2026-10-13.
 The audited recalls were reported between 2018-11-07 and 2026-06-10, so these results describe that period.
 
 | What the pipeline does | Caught |
@@ -14,14 +14,14 @@ The audited recalls were reported between 2018-11-07 and 2026-06-10, so these re
 
 | Root cause | Recalls |
 |---|---|
-| CGMP | 37 |
+| CGMP | 30 |
 | Sterility | 27 |
-| Microbial contamination | 11 |
-| Chemical or foreign contamination | 6 |
-| Failed specification | 4 |
-| Impurities | 4 |
+| Microbial contamination | 12 |
+| Impurities | 7 |
+| Chemical or foreign contamination | 5 |
+| Failed specification | 5 |
+| Unapproved drug | 4 |
+| Labeling or packaging | 3 |
 | Particulates | 3 |
-| Labeling or packaging | 2 |
-| Unapproved drug | 2 |
 | Potency | 2 |
 | Container or device defect | 1 |

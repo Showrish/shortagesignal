@@ -11,7 +11,7 @@ D-0150-2025,Discoloration,yes,,yes,none,Failed specification,
 D-0004-2025,Marketed without an approved NDA/ANDA: FDA analysis found products to be tainted with undeclared acetaminophen and sildenafil.,can't tell,,no NDC in text,none,Unapproved drug,
 D-0648-2024,Subpotent Drug- An out of specification ( OOS ) result observed in assay test during 18-month long term stability study.,yes,,yes,none,Potency,
 D-0644-2024,"Failed impurities/degradation specifications: results for unknown impurity, were 0.13% and 0.11% respectively, exceeding the 0.10% specification limit.",yes,,yes,none,Impurities,
-D-0487-2024,Presence of Foreign Tablets: Pharmacist reported a tablet of baclofen in a bottle of 1000-count tramadol,yes,,yes,none,Chemical or foreign contamination,
+D-0487-2024,Presence of Foreign Tablets: Pharmacist reported a tablet of baclofen in a bottle of 1000-count tramadol,yes,,yes,none,Labeling or packaging,Relabeled from Chemical or foreign contamination on Oct 13 after re-checking the audit rules.
 D-0473-2024,"CGMP Deviation: Discontinuation of the Quality program by manufacturer that would assure product meet the identity, strength, quality, and purity characteristics that they are purported or represented to possess.",no,clocortolone pivalate,yes,none,CGMP,
 D-0391-2024,Failed Impurities/Degradation Specifications: Out of specification for organic impurities,yes,,yes,none,Impurities,
 D-1082-2023,Out of Specification result observed in content uniformity testing,yes,,yes,none,Failed specification,
@@ -48,7 +48,7 @@ D-0081-2022,Failed Excipient Specifications; product manufactured using an excip
 D-0897-2021,Lack of sterility assurance.,yes,,yes,none,Sterility,
 D-0824-2021,CGMP Deviations,yes,,yes,none,CGMP,
 D-0741-2021,Lack of Assurance of Sterility,yes,,yes,none,Sterility,
-D-0720-2021,"cGMP deviations: Atypical appearance, decrease in size and change in color of the lyophilized cake of drug product.",yes,,yes,none,CGMP,
+D-0720-2021,"cGMP deviations: Atypical appearance, decrease in size and change in color of the lyophilized cake of drug product.",yes,,yes,none,Failed specification,Relabeled from CGMP on Oct 13 after re-checking the audit rules.
 D-0678-2021,"Chemical contamination: product found to be contaminated with methanol (wood alcohol), benzene and acetaldehyde.",no,,no NDC in text,none,Chemical or foreign contamination,
 D-0683-2021,"Chemical contamination: product found to be contaminated with methanol (wood alcohol), benzene and acetaldehyde.",no,,no NDC in text,none,Chemical or foreign contamination,
 D-0593-2021,CGMP Deviations: Intermittent exposure to temperature excursion during storage.,yes,,yes,none,CGMP,
@@ -58,18 +58,18 @@ D-1624-2020,CGMP Deviations,no,thyroid,yes,none,CGMP,"desiccated thyroid, T3/T4 
 D-1605-2020,CGMP Deviations: manufactured under the same conditions as those found to be subpotent.,no,thyroid,yes,none,CGMP,"desiccated thyroid, T3/T4 are its content"
 D-1450-2020,Chemical contamination: product contains elevated levels of undeclared lead.,can't tell,,no NDC in text,none,Chemical or foreign contamination,
 D-1374-2020,Failed Impurities/Degradation Specification: There is  a slow leaching process from the product label on the bottle which may impact the product over the shelf life.,yes,,yes,none,Impurities,
-D-1162-2020,CGMP Deviations: These products have been found to be misbranded as  unapproved new drugs,can't tell,,no NDC in text,none,CGMP,zip code in leftovers
-D-1136-2020,CGMP Deviations: These products have been found to be misbranded as  unapproved new drugs,can't tell,,no NDC in text,none,CGMP,zip code in leftovers
+D-1162-2020,CGMP Deviations: These products have been found to be misbranded as  unapproved new drugs,can't tell,,no NDC in text,none,Unapproved drug,"zip code in leftovers, Relabeled from CGMP on Oct 13 after re-checking the audit rules."
+D-1136-2020,CGMP Deviations: These products have been found to be misbranded as  unapproved new drugs,can't tell,,no NDC in text,none,Unapproved drug,"zip code in leftovers, Relabeled from CGMP on Oct 13 after re-checking the audit rules."
 D-0932-2020,Lack of Assurance of Sterility,no,alprostadil + atropine sulfate + papaverine hydrochloride + phentolamine mesylate,yes,none,Sterility,4-drug combo
 D-0800-2020,Marketed Without An Approved NDA/ANDA: product  contains Selective Androgen Receptor Modulators (SARMs),can't tell,,no NDC in text,none,Unapproved drug,
 D-0672-2020,Lack of sterility assurance.,no,baclofen + fentanyl,no NDC in text,none,Sterility,BAC matched a homeopathic brand
 D-0555-2020,Presence of Particulate matter: manufacturer recalled fentanyl API due to potential for glass particules,yes,,yes,none,Particulates,
-D-0543-2020,CGMP Deviations: Presence of NDMA impurity detected in product.,yes,ranitidine hydrochloride,,none,CGMP,"Zantac = ranitidine, NDMA"
+D-0543-2020,CGMP Deviations: Presence of NDMA impurity detected in product.,yes,ranitidine hydrochloride,,none,Impurities,"Zantac = ranitidine, NDMA, Relabeled from CGMP on Oct 13 after re-checking the audit rules."
 D-0533-2020,Microbial contamination of non-sterile product.,no,epinephrine bitartrate + lidocaine hydrochloride + tetracaine hydrochloride,yes,none,Microbial contamination,"LET kit, actives only"
 D-0477-2020,Lack of Assurance of Sterility,can't tell,,no NDC in text,none,Sterility,
-D-0173-2020,CGMP Deviations: Presence of NDMA impurity detected in product.,yes,,yes,none,CGMP,
+D-0173-2020,CGMP Deviations: Presence of NDMA impurity detected in product.,yes,,yes,none,Impurities,Relabeled from CGMP on Oct 13 after re-checking the audit rules.
 D-1791-2019,Lack of Assurance of Sterility,yes,,no NDC in text,none,Sterility,zip code in leftovers
-D-1741-2019,CGMP Deviations: Out of Specification results for either total microbial count or total organic carbon in the purified water utilized in the manufacturing process.,can't tell,,no NDC in text,none,CGMP,
+D-1741-2019,CGMP Deviations: Out of Specification results for either total microbial count or total organic carbon in the purified water utilized in the manufacturing process.,can't tell,,no NDC in text,none,Microbial contamination,Relabeled from CGMP on Oct 13 after re-checking the audit rules.
 D-1664-2019,Lack of Assurance of Sterility,yes,,yes,none,Sterility,
 D-1667-2019,Lack of Assurance of Sterility,yes,,yes,none,Sterility,
 D-1616-2019,CGMP Deviations: Products were manufactured outside of the controls required by current Good Manufacturing Practices.,can't tell,,no NDC in text,none,CGMP,zip code in leftovers
@@ -83,7 +83,7 @@ D-1106-2019,Lack of Processing Controls: Insanitary conditions observed during c
 D-1072-2019,Failed Impurities/Degradation Specifications: High out-of-specification (OOS) results were demonstrated for several specified impurities at the 24-month time point,yes,,yes,none,Impurities,
 D-1065-2019,Subpotent Drug.,yes,,yes,none,Potency,
 D-1018-2019,Lack of Assurance of Sterility,yes,,yes,none,Sterility,
-D-1045-2019,"CGMP Deviations: presence of an impurity, N-Methylnitrosobutyric acid (NMBA) was identified",yes,,yes,none,CGMP,
+D-1045-2019,"CGMP Deviations: presence of an impurity, N-Methylnitrosobutyric acid (NMBA) was identified",yes,,yes,none,Impurities,Relabeled from CGMP on Oct 13 after re-checking the audit rules.
 D-1027-2019,Lack of Assurance of Sterility,no,lidocaine hydrochloride,yes,none,Sterility,
 D-0575-2019,Microbial contamination,can't tell,,yes,none,Microbial contamination,
 D-0610-2019,Microbial contamination,can't tell,,yes,none,Microbial contamination,
