@@ -13,3 +13,4 @@ data/state.json
 data/run_log.csv
 datastore/
 data/check_log.csv
+data/

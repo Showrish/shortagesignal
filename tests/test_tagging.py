@@ -86,6 +86,17 @@ RULE_CASES = [
      "Distribution", "Failed specification"),
     ("cGMP deviations: Atypical appearance, decrease in size and change in color of the "
      "lyophilized cake", "Failed specification"),
+    ("Presence of glass particles in vials", "Particulates"),
+    # Standard FDA labels the rules missed, found in Claude's unsure tags
+    ("The firm received seven reports of adverse reactions in the form of skin abscesses "
+     "potentially linked to compounded methylprednisolone", "Sterility"),
+    ("Stability Data Does Not Support Expiry", "Failed specification"),
+    ("Crystallization", "Failed specification"),
+    ("Incorrect/Undeclared Excipients", "Failed specification"),
+    ("Incorrect Product Formulation", "Failed specification"),
+    ("Does Not Meet USP or OTC Monograph", "Failed specification"),
+    ("Marketed Without An Approved NDA/ANDA: does not conform to the OTC monograph",
+     "Unapproved drug"),
 ]
 
 
