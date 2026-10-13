@@ -17,6 +17,12 @@
 --   * Foreign tablets (a mix-up) come before foreign substance (contamination).
 --   * Impurities and Potency come before Labeling, because their reasons often say
 --     "labeled amount".
+--   * Several standard FDA labels mean the product doesn't meet its standard, so they're
+--     Failed specification: stability data that doesn't support the expiry date,
+--     crystallization, wrong excipients or formulation, not meeting the USP or OTC
+--     monograph. "Does not conform to the OTC monograph" in an unapproved-drug reason
+--     isn't matched, so those stay Unapproved drug.
+--   * Particle size is a specification, but other particles are Particulates.
 --
 -- Test it:   python -m shortagesignal.run_sql sql/root_cause_rules.sql
 -- Score it:  python -m shortagesignal.tagging rules
@@ -36,7 +42,7 @@ SELECT
           OR reason LIKE '%lacking%')                               THEN 'CGMP'
         WHEN reason LIKE '%non-steril%' OR reason LIKE '%non steril%'
           OR reason LIKE '%nonsteril%'                              THEN 'Microbial contamination'
-        WHEN reason LIKE '%sterility%'                              THEN 'Sterility'
+        WHEN reason LIKE '%sterility%' OR reason LIKE '%abscess%'   THEN 'Sterility'
         WHEN reason LIKE '%microbial%' OR reason LIKE '%mold%' OR reason LIKE '%yeast%'
           OR reason LIKE '%bacteria%' OR reason LIKE '%fungal%'     THEN 'Microbial contamination'
         WHEN reason LIKE '%foreign tablet%' OR reason LIKE '%foreign capsule%'
@@ -54,7 +60,11 @@ SELECT
         WHEN reason LIKE '%dissolution%' OR reason LIKE '%specification%'
           OR reason LIKE '%discolor%' OR reason LIKE '%uniformity%'
           OR reason LIKE '%change in color%' OR reason LIKE '%color change%'
-          OR reason LIKE '%atypical appearance%'                    THEN 'Failed specification'
+          OR reason LIKE '%atypical appearance%'
+          OR reason LIKE '%stability data does not support%'
+          OR reason LIKE '%stability testing fail%' OR reason LIKE '%crystalliz%'
+          OR reason LIKE '%excipient%' OR reason LIKE '%product formulation%'
+          OR reason LIKE '%not meet%monograph%'                     THEN 'Failed specification'
         WHEN reason LIKE '%defective%' OR reason LIKE '%leak%' OR reason LIKE '%crack%'
           OR reason LIKE '%broken%' OR reason LIKE '%container%'
           OR reason LIKE '%delivery system%'                        THEN 'Container or device defect'

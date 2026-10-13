@@ -198,3 +198,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Why:** nothing was found in a precautionary recall's product, so naming a specific defect overstates what happened. Medium-confidence answers were right only 7 of 15 times. Checking labels against the written rules keeps the answer key consistent without bending it toward the taggers.
 - **Passed on:** leaving known slips in the answer key, and changing labels just to match the taggers
 - **Caveat:** the rules were tuned on these same 99 rows, so their score on them is optimistic. Fresh hand labels are the honest test.
+
+## 2026-10-13: rules for standard FDA labels found in Claude's unsure tags
+- **Chose:** new rules for reasons Claude kept tagging with low or medium confidence. Skin abscesses after an injection count as Sterility. Stability data that doesn't support the expiry date, stability testing failures, crystallization, incorrect or undeclared excipients, incorrect product formulation, and not meeting the USP or OTC monograph count as Failed specification. Particle size stays Failed specification, while other particles count as Particulates.
+- **Why:** after the first full run, 479 of Claude's 599 tags were unsure. Grouping them by firm and reason in SQL showed that 298 came from one event, a compounding pharmacy that recalled 298 products after reports of skin abscesses, and that most of the Failed specification ones used standard FDA labels the rules didn't know. Rules are free, consistent and need no review.
+- **Passed on:** reviewing each unsure tag by hand
