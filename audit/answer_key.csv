@@ -1,5 +1,5 @@
 recall_number,reason_for_recall,drug_ok,correct_drug,ndc_ok,data_problem,root_cause,notes
-D-0598-2026,Labeling: Not Elsewhere Classified. This recall has been initiated in response to the denial by FDA of marketing the product under the proprietary name Xyvona,no,evorphanol tartrate,yes,none,Labeling or packaging,generic in brackets after the brand
+D-0598-2026,Labeling: Not Elsewhere Classified. This recall has been initiated in response to the denial by FDA of marketing the product under the proprietary name Xyvona,no,levorphanol tartrate,yes,none,Labeling or packaging,generic in brackets after the brand
 D-0447-2026,Presence of particulate matter,yes,,yes,none,Particulates,
 D-0293-2026,Presence of Foreign Substance,yes,,yes,none,Chemical or foreign contamination,
 D-0117-2026,Lack of Assurance of Sterility,yes,,yes,none,Sterility,
@@ -76,10 +76,10 @@ D-1616-2019,CGMP Deviations: Products were manufactured outside of the controls 
 D-1543-2019,CGMP deviations: Stability testing was not conducted on manufactured sunscreen and hand sanitizer OTC products.,no,ethyl alcohol,no NDC in text,none,CGMP,
 D-1558-2019,CGMP deviations: Stability testing was not conducted on manufactured sunscreen and hand sanitizer OTC products.,no,ethyl alcohol,no NDC in text,none,CGMP,
 D-1384-2019,cGMP Deviations: Potential product contamination with Burkholderia cepacia (B.cepacia) and Ralstonia pickettii (R. pickettii).,yes,,yes,none,CGMP,
-D-1169-2019,Lack of sterility assurance.,no,prostaglandin,no NDC in text,none,Sterility,
+D-1169-2019,Lack of sterility assurance.,no,alprostadil,no NDC in text,none,Sterility,
 D-1144-2019,Lack of sterility assurance.,yes,,no NDC in text,none,Sterility,
 D-1100-2019,Lack of Processing Controls: Insanitary conditions observed during compounding of sterile drugs during recent FDA Inspection.,no,papaverine + phentolamine,no NDC in text,none,CGMP,hyphen joins the drugs; insanitary conditions
-D-1106-2019,Lack of Processing Controls: Insanitary conditions observed during compounding of sterile drugs during recent FDA Inspection.,no,papaverine + phentolamine,no NDC in text,none,CGMP,hyphen joins the drugs; insanitary conditions
+D-1106-2019,Lack of Processing Controls: Insanitary conditions observed during compounding of sterile drugs during recent FDA Inspection.,no,papaverine + phentolamine + alprostadil,no NDC in text,none,CGMP,hyphen joins the drugs; insanitary conditions
 D-1072-2019,Failed Impurities/Degradation Specifications: High out-of-specification (OOS) results were demonstrated for several specified impurities at the 24-month time point,yes,,yes,none,Impurities,
 D-1065-2019,Subpotent Drug.,yes,,yes,none,Potency,
 D-1018-2019,Lack of Assurance of Sterility,yes,,yes,none,Sterility,

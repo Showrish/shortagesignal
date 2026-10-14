@@ -13,6 +13,11 @@ Links come in four strengths, strongest first:
   drug_and_firm  same drug name and the same company
   drug           same drug name, any company
 
+Day 9 adds a last resort for naming the drug: Claude's reading of the product text (see
+extract.py). Its name only counts when it's a drug we know exists: one in the NDC
+directory, on the shortage list, or attached by openFDA to some past recall. The last one
+covers drugs that are off the market now, like ranitidine.
+
 Tables written:
   recall_drugs           one row per recall: its drug key and where the key came from
   shortage_drugs         one row per shortage listing: its drug key and firm key
@@ -20,6 +25,7 @@ Tables written:
   unmatched_recalls      recalls with no NDC and no recognizable drug name
 """
 from collections import defaultdict
+from pathlib import Path
 
 from shortagesignal.drugs import drug_key, text_drug_name
 from shortagesignal.firms import firm_key
@@ -30,8 +36,13 @@ from shortagesignal.storage import load_batch, write_parquet
 LEVELS = {1: "package", 2: "product", 3: "drug_and_firm", 4: "drug"}
 
 
-def identify_drug(ndc9s, openfda_text, description, ndc_map, vocabulary, brand_map):
-    """The drug a recall is about, and how we know. (None, None) if we can't tell."""
+def identify_drug(ndc9s, openfda_text, description, ndc_map, vocabulary, brand_map,
+                  claude_key=None):
+    """The drug a recall is about, and how we know. (None, None) if we can't tell.
+
+    claude_key is Claude's answer, already checked against the known drugs. It's only used
+    when every other way comes up empty.
+    """
     for ndc9 in ndc9s:
         if ndc9 in ndc_map:
             return ndc_map[ndc9], "ndc_directory"
@@ -46,18 +57,25 @@ def identify_drug(ndc9s, openfda_text, description, ndc_map, vocabulary, brand_m
         return key, "text_name"
     if key in brand_map:
         return brand_map[key], "text_brand"
+    if claude_key:
+        return claude_key, "claude"
     return None, None
 
 
-def build_matches(con, f, workdir):
-    """f maps names to file paths: inputs ndc, recalls, recall_ids, shortage_ids, snapshots,
-    and outputs recall_drugs, shortage_drugs, links, unmatched. Returns stats."""
-    p = {name: path.as_posix() for name, path in f.items()}
+def check_claude_key(key, known, brand_map):
+    """Claude's drug key if it's a known drug, the generic for a known brand, else None."""
+    if not key:
+        return None
+    if key in known:
+        return key
+    return brand_map.get(key)
 
-    # 1. What drugs exist: every generic name in the NDC directory and on the shortage list.
+
+def _directory(con, ndc_path):
+    """Product code to drug key, brand to generic, and every generic in the NDC directory."""
     ndc_map, brand_map, vocabulary = {}, {}, set()
     for product_ndc, generic, brand in con.execute(
-        f"SELECT product_ndc, generic_name, brand_name FROM read_parquet('{p['ndc']}')"
+        f"SELECT product_ndc, generic_name, brand_name FROM read_parquet('{ndc_path}')"
     ).fetchall():
         key = drug_key(generic)
         if not key:
@@ -69,32 +87,77 @@ def build_matches(con, f, workdir):
         brand_key = drug_key(brand)
         if brand_key and brand_key != key:
             brand_map.setdefault(brand_key, key)
+    return ndc_map, brand_map, vocabulary
 
-    shortage_rows = []
+
+def _shortage_rows(con, snapshots_path):
+    """One row per shortage listing, with its latest name and company."""
+    rows = []
     for shortage_key, generic, company in con.execute(f"""
         SELECT shortage_key, arg_max(generic_name, snapshot_date), arg_max(company_name, snapshot_date)
-        FROM read_parquet('{p['snapshots']}')
+        FROM read_parquet('{snapshots_path}')
         GROUP BY shortage_key
     """).fetchall():
-        key = drug_key(generic)
-        if key:
-            vocabulary.add(key)
-        shortage_rows.append({"shortage_key": shortage_key, "drug_key": key,
-                              "firm_key": firm_key(company), "generic_name": generic})
+        rows.append({"shortage_key": shortage_key, "drug_key": drug_key(generic),
+                     "firm_key": firm_key(company), "generic_name": generic})
+    return rows
 
-    # 2. A drug identity for every recall.
+
+def _openfda_names(recall_list):
+    """Every generic name openFDA has attached to a recall, as drug keys."""
+    names = set()
+    for _, _, openfda_text in recall_list:
+        for name in json_list(openfda_text, "generic_name"):
+            key = drug_key(name)
+            if key:
+                names.add(key)
+    return names
+
+
+def _recall_list(con, recalls_path):
+    return con.execute(
+        f"SELECT recall_number, product_description, openfda FROM read_parquet('{recalls_path}')"
+    ).fetchall()
+
+
+def known_drugs(con, ndc_path, snapshots_path, recalls_path):
+    """(known drug keys, brand map) for checking Claude's answers outside the daily run."""
+    _, brand_map, vocabulary = _directory(con, Path(ndc_path).as_posix())
+    vocabulary |= {r["drug_key"] for r in _shortage_rows(con, Path(snapshots_path).as_posix())
+                   if r["drug_key"]}
+    return vocabulary | _openfda_names(_recall_list(con, Path(recalls_path).as_posix())), brand_map
+
+
+def build_matches(con, f, workdir, claude_keys=None):
+    """f maps names to file paths: inputs ndc, recalls, recall_ids, shortage_ids, snapshots,
+    and outputs recall_drugs, shortage_drugs, links, unmatched. claude_keys maps recall
+    numbers to Claude's drug keys (see extract.py). Returns stats."""
+    p = {name: path.as_posix() for name, path in f.items()}
+    claude_keys = claude_keys or {}
+
+    # 1. What drugs exist: every generic name in the NDC directory and on the shortage list.
+    ndc_map, brand_map, vocabulary = _directory(con, p["ndc"])
+    shortage_rows = _shortage_rows(con, p["snapshots"])
+    vocabulary |= {r["drug_key"] for r in shortage_rows if r["drug_key"]}
+
+    # 2. A drug identity for every recall. Claude's answers are checked against a wider list
+    #    that also has the names openFDA attached to past recalls.
     ndc9s = defaultdict(list)
     for recall_number, ndc9 in con.execute(
         f"SELECT recall_number, ndc9 FROM read_parquet('{p['recall_ids']}') WHERE ndc9 IS NOT NULL"
     ).fetchall():
         ndc9s[recall_number].append(ndc9)
 
-    recall_rows = []
-    for recall_number, description, openfda_text in con.execute(
-        f"SELECT recall_number, product_description, openfda FROM read_parquet('{p['recalls']}')"
-    ).fetchall():
+    recall_list = _recall_list(con, p["recalls"])
+    known = (vocabulary | _openfda_names(recall_list)) if claude_keys else vocabulary
+    recall_rows, claude_rejected = [], 0
+    for recall_number, description, openfda_text in recall_list:
+        raw = claude_keys.get(recall_number)
         key, source = identify_drug(ndc9s.get(recall_number, []), openfda_text, description,
-                                    ndc_map, vocabulary, brand_map)
+                                    ndc_map, vocabulary, brand_map,
+                                    claude_key=check_claude_key(raw, known, brand_map))
+        if raw and source is None:
+            claude_rejected += 1
         recall_rows.append({"recall_number": recall_number, "drug_key": key, "id_source": source})
 
     load_batch(con, recall_rows, ["recall_number", "drug_key", "id_source"], "recall_drugs", workdir)
@@ -184,8 +247,16 @@ def build_matches(con, f, workdir):
         ) GROUP BY best
     """).fetchall())
     identified = recalls - unmatched
+    by_source = defaultdict(int)
+    for r in recall_rows:
+        by_source[r["id_source"] or "none"] += 1
+    named = recalls - by_source["none"]
     return {
         "recalls": recalls,
+        "named": named,
+        "named_pct": round(100 * named / recalls, 1) if recalls else 0.0,
+        "by_source": dict(by_source),
+        "claude_rejected": claude_rejected,
         "identified": identified,
         "identified_pct": round(100 * identified / recalls, 1) if recalls else 0.0,
         "unmatched": unmatched,

@@ -7,10 +7,11 @@ Day 8: root-cause tagging, scored against your hand audit.
 How a recall gets its root cause:
   1. The rules in sql/root_cause_rules.sql. Free, instant, easy to check.
   2. Whatever the rules leave untagged goes to Claude Haiku, which must answer by calling
-     a tool whose schema only allows the 12 category names. Each answer is cached by
-     recall number and reason text, so a recall is never sent twice.
+     a tool whose schema only allows the 12 category names. The same reason text always
+     gets the same answer, so each distinct reason is asked once, and answers are cached.
   3. Claude's unsure answers (low or medium confidence) also land in tag_review.csv for
-     a person to check. The audit showed medium is right only about half the time.
+     a person to check, one row per distinct reason with how many recalls it covers. The
+     audit showed medium is right only about half the time.
 
 The daily run only calls Claude when SHORTAGESIGNAL_USE_CLAUDE=1 (set in GitHub Actions),
 so local test runs never spend money by accident.
@@ -194,19 +195,35 @@ def build_root_causes(recalls_path, cache_path, out_path, review_path, workdir, 
             if entry.get("prompt_version") == PROMPT_VERSION:
                 cache[(entry["recall_number"], entry["reason_hash"])] = entry
 
-    todo = [(n, reason) for n, reason, rule in rows
-            if not rule and (n, reason_hash(reason)) not in cache]
+    # The same reason text gets the same answer, so a reason Claude has already seen is
+    # answered from the cache, and each new reason is asked once for all its recalls.
+    seen = {}
+    for entry in cache.values():
+        seen.setdefault(entry["reason_hash"], entry)
+    waiting = {}   # reason hash -> recall numbers with that reason
+    todo = {}      # reason hash -> one (recall number, reason) to ask Claude about
+    for n, reason, rule in rows:
+        h = reason_hash(reason)
+        if rule or (n, h) in cache:
+            continue
+        if h in seen:
+            cache[(n, h)] = {**seen[h], "recall_number": n}
+        else:
+            waiting.setdefault(h, []).append(n)
+            todo.setdefault(h, (n, reason))
     new = []
     if client and todo:
-        new = tag_many(client, todo[:max_calls], seconds)
+        new = tag_many(client, list(todo.values())[:max_calls], seconds)
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for r in new:
-            cache[(r["recall_number"], r["reason_hash"])] = {
-                "recall_number": r["recall_number"], "reason_hash": r["reason_hash"],
-                "root_cause": r["root_cause"], "confidence": r["confidence"], "why": r["why"],
-                "model": MODEL, "prompt_version": PROMPT_VERSION, "tagged_at": stamp}
+            for n in waiting[r["reason_hash"]]:
+                cache[(n, r["reason_hash"])] = {
+                    "recall_number": n, "reason_hash": r["reason_hash"],
+                    "root_cause": r["root_cause"], "confidence": r["confidence"],
+                    "why": r["why"], "model": MODEL, "prompt_version": PROMPT_VERSION,
+                    "tagged_at": stamp}
 
-    final, review = [], []
+    final, review = [], {}
     for number, reason, rule in rows:
         cached = cache.get((number, reason_hash(reason)))
         if rule:
@@ -217,8 +234,10 @@ def build_root_causes(recalls_path, cache_path, out_path, review_path, workdir, 
                           "source": "claude", "confidence": cached["confidence"],
                           "why": cached["why"]})
             if cached["confidence"] in REVIEW_CONFIDENCE:
-                review.append({"recall_number": number, "reason_for_recall": reason,
-                               **{k: cached[k] for k in ("root_cause", "confidence", "why")}})
+                group = review.setdefault(cached["reason_hash"], {
+                    "reason_for_recall": reason, "recalls": 0, "example_recall": number,
+                    **{k: cached[k] for k in ("root_cause", "confidence", "why")}})
+                group["recalls"] += 1
         else:
             final.append({"recall_number": number, "root_cause": None, "source": None,
                           "confidence": "", "why": ""})
@@ -233,10 +252,10 @@ def build_root_causes(recalls_path, cache_path, out_path, review_path, workdir, 
                "root_causes", workdir)
     write_parquet(con, "SELECT * FROM root_causes ORDER BY recall_number", out_path)
     with open(review_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["recall_number", "reason_for_recall", "root_cause",
-                                               "confidence", "why"])
+        writer = csv.DictWriter(f, fieldnames=["reason_for_recall", "recalls", "root_cause",
+                                               "confidence", "why", "example_recall"])
         writer.writeheader()
-        writer.writerows(review)
+        writer.writerows(sorted(review.values(), key=lambda g: -g["recalls"]))
 
     tagged = sum(1 for r in final if r["root_cause"])
     return {
@@ -249,6 +268,7 @@ def build_root_causes(recalls_path, cache_path, out_path, review_path, workdir, 
         "claude_calls": len(new),
         "claude_cost": round(cost(new), 4),
         "to_review": len(review),
+        "to_review_recalls": sum(g["recalls"] for g in review.values()),
     }
 
 

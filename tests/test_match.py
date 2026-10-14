@@ -1,7 +1,7 @@
 """Matching recalls to shortages."""
 import duckdb
 
-from shortagesignal.match import build_matches, identify_drug
+from shortagesignal.match import build_matches, check_claude_key, identify_drug
 from shortagesignal.storage import load_batch, write_parquet
 
 NDC_MAP = {"00409-4888": "heparin sodium"}
@@ -28,8 +28,23 @@ def save(con, rows, path, workdir):
     write_parquet(con, "SELECT * FROM fixture", path)
 
 
-def test_build_matches_links_at_the_strongest_level(tmp_path):
-    con = duckdb.connect()
+def test_identify_drug_uses_claude_only_as_a_last_resort():
+    assert identify_drug([], None, "Mystery Compound tablets", NDC_MAP, VOCABULARY, BRANDS,
+                         claude_key="carboplatin") == ("carboplatin", "claude")
+    assert identify_drug(["00409-4888"], None, "", NDC_MAP, VOCABULARY, BRANDS,
+                         claude_key="carboplatin") == ("heparin sodium", "ndc_directory")
+
+
+def test_check_claude_key_only_accepts_known_drugs():
+    known = {"carboplatin", "ranitidine hydrochloride"}
+    assert check_claude_key("carboplatin", known, BRANDS) == "carboplatin"
+    assert check_claude_key("paraplatin", known, BRANDS) == "carboplatin"   # a brand
+    assert check_claude_key("unobtainium", known, BRANDS) is None
+    assert check_claude_key(None, known, BRANDS) is None
+
+
+def _fixture(con, tmp_path):
+    """Two directory products, four recalls (one unnamed), two shortage listings."""
     f = {name: tmp_path / f"{name}.parquet" for name in (
         "ndc", "recalls", "recall_ids", "shortage_ids", "snapshots",
         "recall_drugs", "shortage_drugs", "links", "unmatched")}
@@ -70,7 +85,12 @@ def test_build_matches_links_at_the_strongest_level(tmp_path):
         {**snapshot, "shortage_key": "S-2", "generic_name": "Carboplatin Injection",
          "company_name": "Teyro Labs", "initial_posting_date": "05/01/2023"},
     ], f["snapshots"], tmp_path)
+    return f
 
+
+def test_build_matches_links_at_the_strongest_level(tmp_path):
+    con = duckdb.connect()
+    f = _fixture(con, tmp_path)
     stats = build_matches(con, f, tmp_path)
 
     links = con.execute(
@@ -86,3 +106,22 @@ def test_build_matches_links_at_the_strongest_level(tmp_path):
     assert stats["identified"] == 3 and stats["unmatched"] == 1
     assert stats["linked_recalls"] == 3 and stats["linked_shortages"] == 2
     assert stats["by_level"] == {"package": 1, "product": 0, "drug_and_firm": 1, "drug": 1}
+
+
+def test_build_matches_uses_claude_names_only_for_known_drugs(tmp_path):
+    con = duckdb.connect()
+    f = _fixture(con, tmp_path)
+
+    stats = build_matches(con, f, tmp_path, claude_keys={"D-4": "carboplatin"})
+    sources = dict(con.execute(
+        f"SELECT recall_number, id_source FROM read_parquet('{f['recall_drugs'].as_posix()}')"
+    ).fetchall())
+    assert sources["D-4"] == "claude"
+    assert (stats["by_source"]["claude"], stats["unmatched"], stats["claude_rejected"]) == (1, 0, 0)
+    links = con.execute(
+        f"SELECT shortage_key, match_level FROM read_parquet('{f['links'].as_posix()}') "
+        "WHERE recall_number = 'D-4'").fetchall()
+    assert links == [("S-2", "drug")]
+
+    stats = build_matches(con, f, tmp_path, claude_keys={"D-4": "unobtainium"})
+    assert (stats["unmatched"], stats["claude_rejected"]) == (1, 1)

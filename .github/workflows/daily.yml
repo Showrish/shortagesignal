@@ -17,7 +17,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       SHORTAGESIGNAL_DATA_DIR: ${{ github.workspace }}/datastore
       OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}

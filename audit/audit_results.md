@@ -1,6 +1,6 @@
 # Hand audit results
 
-Audited 99 of 200 sampled recalls, scored on 2026-10-13.
+Audited 99 of 200 sampled recalls, scored on 2026-10-14.
 The audited recalls were reported between 2018-11-07 and 2026-06-10, so these results describe that period.
 
 | What the pipeline does | Caught |
