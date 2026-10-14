@@ -160,8 +160,8 @@ def test_build_root_causes_uses_rules_then_claude_then_the_cache(tmp_path):
     sources = dict(con.execute(
         f"SELECT recall_number, source FROM read_parquet('{paths[1].as_posix()}')").fetchall())
     assert sources == {"D-1": "rule", "D-2": "rule", "D-3": "claude"}
-    with open(paths[2], newline="") as f:
-        assert [r["recall_number"] for r in csv.DictReader(f)] == ["D-3"]   # low confidence
+    with open(paths[2], newline="") as f:   # low confidence, so it's on the review sheet
+        assert [(r["example_recall"], r["recalls"]) for r in csv.DictReader(f)] == [("D-3", "1")]
 
     second = build_root_causes(recalls, *paths, tmp_path, client=client)
     assert second["by_claude"] == 1 and client.calls == 1   # answered from the cache
@@ -205,3 +205,30 @@ def test_old_prompt_answers_are_redone_and_unsure_ones_go_to_review(tmp_path):
     versions = con.execute(
         f"SELECT DISTINCT prompt_version FROM read_parquet('{cache.as_posix()}')").fetchall()
     assert versions == [(tagging.PROMPT_VERSION,)]
+
+
+def test_each_distinct_reason_is_asked_once_and_reviewed_once(tmp_path):
+    con = duckdb.connect()
+    recalls, more = tmp_path / "recalls.parquet", tmp_path / "more_recalls.parquet"
+    con.execute(f"""COPY (SELECT * FROM (VALUES
+        ('D-1', 'Something odd'), ('D-2', 'Something odd'), ('D-3', 'Odd too')
+    ) t(recall_number, reason_for_recall)) TO '{recalls.as_posix()}' (FORMAT PARQUET)""")
+    paths = (tmp_path / "claude_tags.parquet", tmp_path / "root_causes.parquet",
+             tmp_path / "tag_review.csv")
+    client = FakeClient(answer="Other", confidence="medium")
+
+    stats = build_root_causes(recalls, *paths, tmp_path, client=client)
+    assert client.calls == 2                                # two distinct reasons
+    assert stats["by_claude"] == 3
+    assert (stats["to_review"], stats["to_review_recalls"]) == (2, 3)
+    with open(paths[2], newline="") as f:
+        biggest = next(csv.DictReader(f))
+    assert (biggest["reason_for_recall"], biggest["recalls"]) == ("Something odd", "2")
+
+    # A new recall with a reason Claude has already seen is answered from the cache.
+    con.execute(f"""COPY (SELECT * FROM (VALUES
+        ('D-1', 'Something odd'), ('D-2', 'Something odd'), ('D-3', 'Odd too'),
+        ('D-4', 'Odd too')
+    ) t(recall_number, reason_for_recall)) TO '{more.as_posix()}' (FORMAT PARQUET)""")
+    again = build_root_causes(more, *paths, tmp_path, client=client)
+    assert client.calls == 2 and again["by_claude"] == 4

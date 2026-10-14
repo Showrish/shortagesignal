@@ -13,10 +13,12 @@ Every run does three things:
   4. Matching IDs: normalized NDCs and firm keys for recalls, shortages and the
      NDC directory (see identify.py).
   5. Matching: a drug identity for every recall, and links to shortages (see match.py).
-  6. Root causes: rules first, then Claude Haiku for what the rules can't tag
+  6. Drug names: Claude Haiku reads the recalls matching couldn't name, then matching runs
+     again with its answers (see extract.py).
+  7. Root causes: rules first, then Claude Haiku for what the rules can't tag
      (see tagging.py). Claude is only called when SHORTAGESIGNAL_USE_CLAUDE=1.
-  7. Data checks: a failed error check stops the run before anything is saved
-     (see checks.py).
+  8. Data checks: a failed error check stops the run before anything is saved
+     (see checks.py). The run page also gets a table of the pipeline's main numbers.
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
 run_log.csv with one row per run. DuckDB is only the engine that reads and writes them.
@@ -42,9 +44,11 @@ import requests
 from shortagesignal.checks import collect_checks, last_good_run, read_history, report
 from shortagesignal.config import (
     CHECK_LOG_PATH,
+    CLAUDE_DRUGS_PATH,
     CLAUDE_TAGS_PATH,
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
+    EXTRACT_REVIEW_PATH,
     HISTORY_PATH,
     LINKS_PATH,
     NDC_DIRECTORY_PATH,
@@ -62,6 +66,7 @@ from shortagesignal.config import (
     TAG_REVIEW_PATH,
     UNMATCHED_PATH,
 )
+from shortagesignal.extract import extract_drugs, write_review
 from shortagesignal.identify import build_ids
 from shortagesignal.match import build_matches
 from shortagesignal.tagging import build_root_causes, make_client
@@ -88,15 +93,18 @@ RUN_LOG_COLUMNS = [
     "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
     "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
-    "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_tagged_pct",
-    "tag_backlog", "claude_calls", "claude_cost_usd", "checks_warned", "checks_failed", "error",
+    "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_named_pct_before",
+    "recalls_named_pct", "recalls_named_by_claude", "extract_calls", "extract_cost_usd",
+    "recalls_tagged_pct", "tag_backlog", "claude_calls", "claude_cost_usd", "checks_warned",
+    "checks_failed", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
                                NDC_DIRECTORY_PATH, RECALL_IDS_PATH, SHORTAGE_IDS_PATH,
                                RECALL_DRUGS_PATH, SHORTAGE_DRUGS_PATH, LINKS_PATH,
                                UNMATCHED_PATH, ROOT_CAUSES_PATH, CLAUDE_TAGS_PATH,
-                               TAG_REVIEW_PATH, STATE_PATH)]
+                               TAG_REVIEW_PATH, CLAUDE_DRUGS_PATH, EXTRACT_REVIEW_PATH,
+                               STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
@@ -362,6 +370,35 @@ def save_ndc(con, records, path, workdir):
 
 # ---------------------------------------------------------------- run
 
+def write_summary(stats):
+    """Add the pipeline's main numbers to the GitHub run page, under the data checks."""
+    path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    calls = stats.get("extract_calls", 0) + stats.get("claude_calls", 0)
+    spent = stats.get("extract_cost_usd", 0) + stats.get("claude_cost_usd", 0)
+    rows = [
+        ("Recalls", f"{stats.get('recalls_total', 0):,}"),
+        ("Drug named", f"{stats.get('recalls_named_pct_before')}% before Claude, "
+                       f"{stats.get('recalls_named_pct')}% after "
+                       f"({stats.get('recalls_named_by_claude', 0):,} by Claude)"),
+        ("Unmatched recalls", f"{stats.get('unmatched_before', 0):,} before Claude, "
+                              f"{stats.get('recalls_unmatched', 0):,} after"),
+        ("Linked to a shortage", f"{stats.get('linked_before', 0):,} recalls before Claude, "
+                                 f"{stats.get('recalls_linked', 0):,} after"),
+        ("Root causes", f"{stats.get('tagged_by_rule', 0):,} by rules, "
+                        f"{stats.get('tagged_by_claude', 0):,} by Claude, "
+                        f"{stats.get('tag_backlog', 0):,} waiting"),
+        ("Unsure tags to review", f"{stats.get('to_review', 0):,} reasons, covering "
+                                  f"{stats.get('to_review_recalls', 0):,} recalls"),
+        ("Claude this run", f"{calls:,} calls, about ${spent:.2f}"),
+    ]
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n## Pipeline numbers\n\n| What | Value |\n|---|---|\n")
+        for name, value in rows:
+            fh.write(f"| {name} | {value} |\n")
+
+
 def run(data_dir, now, stats):
     """Do the whole run on a staged copy, then swap the files in only if every step worked."""
     today = now.date()
@@ -443,7 +480,7 @@ def run(data_dir, now, stats):
                   f"{ids['directory_packages']:,} directory packages")
 
             # 5. Matching: which drug each recall is about, and which shortages share it
-            m = build_matches(con, {
+            match_files = {
                 "ndc": ndc, "recalls": recalls,
                 "recall_ids": stage / RECALL_IDS_PATH.name,
                 "shortage_ids": stage / SHORTAGE_IDS_PATH.name,
@@ -452,33 +489,65 @@ def run(data_dir, now, stats):
                 "shortage_drugs": stage / SHORTAGE_DRUGS_PATH.name,
                 "links": stage / LINKS_PATH.name,
                 "unmatched": stage / UNMATCHED_PATH.name,
-            }, workdir)
+            }
+            before = build_matches(con, match_files, workdir)
+
+            # 6. Drug names: Claude reads the recalls matching couldn't name (only when
+            #    switched on, but cached answers are always used), then matching runs again.
+            client = make_client() if os.getenv("SHORTAGESIGNAL_USE_CLAUDE") == "1" else None
+            x = extract_drugs(con, stage / RECALL_DRUGS_PATH.name, recalls,
+                              stage / CLAUDE_DRUGS_PATH.name, workdir, client=client)
+            m = before
+            if x["keys"]:
+                m = build_matches(con, match_files, workdir, claude_keys=x["keys"])
+            unused = write_review(con, x, stage / RECALL_DRUGS_PATH.name,
+                                  stage / EXTRACT_REVIEW_PATH.name)
+            xs = x["stats"]
             stats.update(recalls_identified_pct=m["identified_pct"], recalls_unmatched=m["unmatched"],
-                         recalls_linked=m["linked_recalls"], shortages_linked=m["linked_shortages"])
+                         recalls_linked=m["linked_recalls"], shortages_linked=m["linked_shortages"],
+                         recalls_named_pct_before=before["named_pct"],
+                         recalls_named_pct=m["named_pct"],
+                         recalls_named_by_claude=m["by_source"].get("claude", 0),
+                         extract_calls=xs["calls"], extract_cost_usd=xs["cost"],
+                         unmatched_before=before["unmatched"],
+                         linked_before=before["linked_recalls"])
             levels = ", ".join(f"{name.replace('_', ' ')} {n:,}" for name, n in m["by_level"].items())
             print(f"Matching: identified {m['identified']:,} of {m['recalls']:,} recalls "
                   f"({m['identified_pct']}%), {m['unmatched']:,} unmatched. Linked "
                   f"{m['linked_recalls']:,} recalls to {m['linked_shortages']:,} of "
                   f"{m['shortages']:,} shortage listings by their strongest match: {levels}")
+            note = (f"{xs['calls']:,} new Claude calls (about ${xs['cost']:.2f})"
+                    if client else "Claude off for this run")
+            print(f"Drug names: {xs['queue']:,} recalls had no drug name after matching, "
+                  f"Claude has read {xs['answered']:,} of them and {xs['waiting']:,} are waiting. "
+                  f"{note}. Drug named for {before['named_pct']}% of recalls before Claude and "
+                  f"{m['named_pct']}% after ({m['by_source'].get('claude', 0):,} by Claude). "
+                  f"Unmatched {before['unmatched']:,} before, {m['unmatched']:,} after. Linked "
+                  f"{before['linked_recalls']:,} recalls before, {m['linked_recalls']:,} after. "
+                  f"Not used: {unused['not a known drug name']:,} not a known drug name, "
+                  f"{unused['low confidence']:,} low confidence, "
+                  f"{unused['no drug named']:,} with no drug named")
 
-            # 6. Root causes: rules first, then Claude for the rest (only when switched on)
-            client = make_client() if os.getenv("SHORTAGESIGNAL_USE_CLAUDE") == "1" else None
+            # 7. Root causes: rules first, then Claude for the rest (only when switched on)
             t = build_root_causes(recalls, stage / CLAUDE_TAGS_PATH.name,
                                   stage / ROOT_CAUSES_PATH.name, stage / TAG_REVIEW_PATH.name,
                                   workdir, client=client)
             stats.update(recalls_tagged_pct=t["tagged_pct"], tag_backlog=t["backlog"],
-                         claude_calls=t["claude_calls"], claude_cost_usd=t["claude_cost"])
+                         claude_calls=t["claude_calls"], claude_cost_usd=t["claude_cost"],
+                         tagged_by_rule=t["by_rule"], tagged_by_claude=t["by_claude"],
+                         to_review=t["to_review"], to_review_recalls=t["to_review_recalls"])
             note = (f"{t['claude_calls']:,} new Claude calls (about ${t['claude_cost']:.2f})"
                     if client else "Claude off for this run")
             print(f"Root causes: tagged {t['tagged']:,} of {t['recalls']:,} recalls "
                   f"({t['tagged_pct']}%), {t['by_rule']:,} by rules and {t['by_claude']:,} by "
                   f"Claude, {t['backlog']:,} still waiting. {note}. "
-                  f"{t['to_review']} unsure tags to review")
+                  f"{t['to_review']} unsure reasons to review, covering "
+                  f"{t['to_review_recalls']:,} recalls")
 
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)
 
-            # 7. Data checks. A failed error check stops the run before anything is saved.
+            # 8. Data checks. A failed error check stops the run before anything is saved.
             checks = collect_checks(con, {
                 "recalls": recalls,
                 "snapshots": stage / SNAPSHOTS_PATH.name,
@@ -490,6 +559,7 @@ def run(data_dir, now, stats):
             stats["checks_failed"] = sum(c.status == "fail" for c in checks)
             stats["checks_warned"] = sum(c.status == "warn" for c in checks)
             report(checks, data_dir / CHECK_LOG_PATH.name, now.isoformat(timespec="seconds"))
+            write_summary(stats)
 
             # Every step worked, so swap the staged files in.
             for name in DATA_FILES:

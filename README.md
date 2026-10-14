@@ -66,9 +66,15 @@ python -m shortagesignal.run_sql sql/root_cause_rules.sql
 python -m shortagesignal.tagging rules
 python -m shortagesignal.tagging eval
 ```
-Every recall gets one of 12 root causes. The rules in `sql/root_cause_rules.sql` go first. Whatever they can't tag goes to Claude Haiku, which has to answer through a tool that only allows the 12 names. Answers are cached, unsure ones (low or medium confidence) land in `tag_review.csv`, and `tagging eval` scores the rules, Claude, and both together against the hand audit.
+Every recall gets one of 12 root causes. The rules in `sql/root_cause_rules.sql` go first. Whatever they can't tag goes to Claude Haiku, which has to answer through a tool that only allows the 12 names. Each distinct reason is asked once and cached, unsure answers (low or medium confidence) land in `tag_review.csv` with one row per reason, and `tagging eval` scores the rules, Claude, and both together against the hand audit.
 
 `run_sql` runs any SQL file against the project's tables by short name, like `FROM recalls`.
+
+## Drug names (Day 9)
+```
+python -m shortagesignal.extract eval
+```
+Recalls that matching can't name a drug for go to Claude Haiku, which reads the product description and answers through a tool: the active ingredients by generic name, the strength, the dosage form, whether it was compounded, and how sure it is. Matching only uses the answer when Claude is fairly sure and the name is a real drug, one in the NDC directory, on the shortage list, or on a past recall. Then matching runs again, so those recalls can link to shortages. Answers that weren't used land in `extract_review.csv` with the reason, and `extract eval` scores Claude against the drugs in the hand audit.
 
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.

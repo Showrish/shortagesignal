@@ -7,7 +7,8 @@ Run a SQL file against the project's tables and print the first rows.
 Every table is there under a short name, so a query can just say FROM recalls:
   recalls, recall_versions, recall_ids, recall_drugs, unmatched_recalls,
   shortage_snapshots, shortages_current, shortage_history, shortage_ids,
-  shortage_drugs, links, ndc_directory, and answer_key (your hand audit).
+  shortage_drugs, links, ndc_directory, root_causes, claude_tags, claude_drugs,
+  and answer_key (your hand audit).
 """
 import sys
 import time
@@ -16,6 +17,8 @@ from pathlib import Path
 import duckdb
 
 from shortagesignal.config import (
+    CLAUDE_DRUGS_PATH,
+    CLAUDE_TAGS_PATH,
     CURRENT_SHORTAGES_PATH,
     DATA_DIR,
     HISTORY_PATH,
@@ -26,6 +29,7 @@ from shortagesignal.config import (
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
     ROOT,
+    ROOT_CAUSES_PATH,
     SHORTAGE_DRUGS_PATH,
     SHORTAGE_IDS_PATH,
     SNAPSHOTS_PATH,
@@ -39,6 +43,8 @@ TABLES = {
     "shortages_current": CURRENT_SHORTAGES_PATH, "shortage_history": HISTORY_PATH,
     "shortage_ids": SHORTAGE_IDS_PATH, "shortage_drugs": SHORTAGE_DRUGS_PATH,
     "links": LINKS_PATH, "ndc_directory": NDC_DIRECTORY_PATH,
+    "root_causes": ROOT_CAUSES_PATH, "claude_tags": CLAUDE_TAGS_PATH,
+    "claude_drugs": CLAUDE_DRUGS_PATH,
 }
 
 

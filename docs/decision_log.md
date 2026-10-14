@@ -203,3 +203,18 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** new rules for reasons Claude kept tagging with low or medium confidence. Skin abscesses after an injection count as Sterility. Stability data that doesn't support the expiry date, stability testing failures, crystallization, incorrect or undeclared excipients, incorrect product formulation, and not meeting the USP or OTC monograph count as Failed specification. Particle size stays Failed specification, while other particles count as Particulates.
 - **Why:** after the first full run, 479 of Claude's 599 tags were unsure. Grouping them by firm and reason in SQL showed that 298 came from one event, a compounding pharmacy that recalled 298 products after reports of skin abscesses, and that most of the Failed specification ones used standard FDA labels the rules didn't know. Rules are free, consistent and need no review.
 - **Passed on:** reviewing each unsure tag by hand
+
+## 2026-10-14: Claude names drugs, but only from a known list
+- **Chose:** recalls that matching can't name a drug for go to Claude Haiku, which answers through a tool with the ingredients, strength, dosage form, whether it was compounded, and its confidence. Matching uses the answer only when the confidence is high or medium and the name is a known drug: one in the NDC directory, on the shortage list, or attached by openFDA to a past recall. Claude's name is the last resort, after NDC, openFDA and text matching. Matching runs twice, before and after Claude, so the run log has exact before and after numbers. Each run makes at most 3,000 calls in 15 minutes, so the backlog clears over a couple of runs.
+- **Why:** a made-up or misspelled name would create false links to shortages. Checking against real drug names stops Claude from inventing drugs, and the names on past recalls cover drugs that are off the market now, like ranitidine.
+- **Passed on:** letting Claude's answer override the other methods, and fuzzy matching of Claude's names
+
+## 2026-10-14: ask once per distinct text, and review by reason
+- **Chose:** Claude is asked once per distinct reason when tagging and once per distinct product text when naming drugs. The tag review sheet has one row per reason, with how many recalls it covers. The run page now shows a table of the pipeline's main numbers under the data checks.
+- **Why:** one pharmacy's recall produced 298 rows with the same reason. One answer per text is cheaper, always consistent, and lets a reviewer decide once.
+- **Passed on:** one call per recall
+## 2026-10-14: scoring Claude's drug names, ignoring salts
+- **Chose:** the extraction eval reports two scores, the exact drug key and one that ignores salt words, so fentanyl and fentanyl citrate count as the same drug. Three answer-key labels were corrected after the first scoring, checked against the written audit rules: a typo (evorphanol), a missing PGE-1 in a combination, and a drug class (prostaglandin) instead of the drug (alprostadil).
+- **Why:** recall text often leaves the salt off, so the hand labels did too, while Claude gave full names. Counting those as wrong understated Claude.
+- **Result:** on the 74 audited recalls with a clear drug, the pipeline finds 65% before Claude and 82% with it, ignoring salts. None of the 13 answers Claude added were wrong. The known-drug check blocked 10 more, mostly compounded mixes that can't link to a shortage anyway, and it caught Claude's only real mistakes.
+- **Passed on:** loosening the known-drug check for compounded mixes
