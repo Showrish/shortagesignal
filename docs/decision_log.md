@@ -218,3 +218,20 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Why:** recall text often leaves the salt off, so the hand labels did too, while Claude gave full names. Counting those as wrong understated Claude.
 - **Result:** on the 74 audited recalls with a clear drug, the pipeline finds 65% before Claude and 82% with it, ignoring salts. None of the 13 answers Claude added were wrong. The known-drug check blocked 10 more, mostly compounded mixes that can't link to a shortage anyway, and it caught Claude's only real mistakes.
 - **Passed on:** loosening the known-drug check for compounded mixes
+
+## 2026-10-16: count recall events, not recall numbers
+- **Chose:** the recall-to-shortage analysis counts recall events (FDA's event_id), dated by their earliest recall start date and tagged with the most common root cause among their products. It looks at events since 2020, and a shortage counts when FDA posted it within 365 days after the event.
+- **Why:** one event can cover hundreds of products. Sterility has 6,410 recall numbers but only 501 events, so counting recall numbers would mostly describe a few big compounding-pharmacy recalls. FDA's shortage feed mostly lists shortages that are still going on, so older recalls can't be matched to shortages that ended long ago.
+- **Result:** about 2% of recall events since 2020 were followed within a year by a shortage FDA still lists. Sterility stands out at 6.2%, about three times the average, usually 4 to 5 months later.
+- **Limit:** only shortages FDA still lists are seen, and drug-level links can be coincidence. The daily snapshots since October 11, 2026 keep every shortage from now on.
+
+## 2026-10-16: a points-based risk flag, not a trained model
+- **Chose:** each recall gets 2 points for a Sterility root cause, 2 when only 1 or 2 companies list the drug in the NDC directory (1 point for 3 to 5), and 1 for an injectable. 4 or more is high, 2 or 3 is watch. Recalls reported in the last 30 days go into risk_log.csv with the flag they got that day.
+- **Why:** with about 40 positive events since 2020, a model would learn to always say no shortage. Points are easy to explain and check, and the backtest reports each level's lift over the average. The log makes a fair test possible later, on recalls the flag had never seen.
+- **Passed on:** a trained classifier
+- **Limit:** the Sterility points came from the same data the backtest uses, so its numbers are optimistic. Repackagers that don't say so in their name still count as companies.
+
+## 2026-10-16: an XmR control chart on weekly recall events
+- **Chose:** weekly recall events by FDA report week, with limits from the two years before the last 13 weeks, using the moving range (an XmR chart).
+- **Why:** weekly counts vary more than a Poisson c-chart assumes, so a c-chart would flag too many ordinary weeks. Counting events keeps one big recall from looking like a crisis week.
+- **Passed on:** a c-chart, and counting recall numbers

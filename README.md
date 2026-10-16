@@ -76,6 +76,12 @@ python -m shortagesignal.extract eval
 ```
 Recalls that matching can't name a drug for go to Claude Haiku, which reads the product description and answers through a tool: the active ingredients by generic name, the strength, the dosage form, whether it was compounded, and how sure it is. Matching only uses the answer when Claude is fairly sure and the name is a real drug, one in the NDC directory, on the shortage list, or on a past recall. Then matching runs again, so those recalls can link to shortages. Answers that weren't used land in `extract_review.csv` with the reason, and `extract eval` scores Claude against the drugs in the hand audit.
 
+## Risk flags and the control chart (Day 10)
+```
+python -m shortagesignal.risk backtest
+```
+About 2% of recall events since 2020 were followed within a year by a shortage FDA still lists today, usually 3 to 5 months later. Sterility recalls stand out at about three times the average. Every recall gets a risk flag from simple points (a Sterility root cause, how many companies list the drug, an injectable product), new recalls are logged with the flag they got that day, and a control chart marks weeks with unusually many recall events. The queries behind the analysis are in `sql/`.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
