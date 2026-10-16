@@ -17,7 +17,9 @@ Every run does three things:
      again with its answers (see extract.py).
   7. Root causes: rules first, then Claude Haiku for what the rules can't tag
      (see tagging.py). Claude is only called when SHORTAGESIGNAL_USE_CLAUDE=1.
-  8. Data checks: a failed error check stops the run before anything is saved
+  8. Risk flags on every recall, maker counts, and a control chart on weekly recall
+     events (see risk.py).
+  9. Data checks: a failed error check stops the run before anything is saved
      (see checks.py). The run page also gets a table of the pipeline's main numbers.
 
 Storage: one Parquet file per table in DATA_DIR, plus state.json for bookkeeping and
@@ -51,12 +53,15 @@ from shortagesignal.config import (
     EXTRACT_REVIEW_PATH,
     HISTORY_PATH,
     LINKS_PATH,
+    MAKERS_PATH,
     NDC_DIRECTORY_PATH,
     NDC_PATH,
     RECALL_DRUGS_PATH,
     RECALL_IDS_PATH,
     RECALL_VERSIONS_PATH,
     RECALLS_PATH,
+    RISK_LOG_PATH,
+    RISK_PATH,
     ROOT_CAUSES_PATH,
     RUN_LOG_PATH,
     SHORTAGE_DRUGS_PATH,
@@ -65,10 +70,12 @@ from shortagesignal.config import (
     STATE_PATH,
     TAG_REVIEW_PATH,
     UNMATCHED_PATH,
+    WEEKLY_PATH,
 )
 from shortagesignal.extract import extract_drugs, write_review
 from shortagesignal.identify import build_ids
 from shortagesignal.match import build_matches
+from shortagesignal.risk import build_control_chart, build_risk
 from shortagesignal.tagging import build_root_causes, make_client
 from shortagesignal.pull_full_history import API_KEY, API_URL, HEADERS, MANIFEST_URL
 from shortagesignal.pull_full_history import from_bulk_files, get_json
@@ -95,8 +102,9 @@ RUN_LOG_COLUMNS = [
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
     "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_named_pct_before",
     "recalls_named_pct", "recalls_named_by_claude", "extract_calls", "extract_cost_usd",
-    "recalls_tagged_pct", "tag_backlog", "claude_calls", "claude_cost_usd", "checks_warned",
-    "checks_failed", "error",
+    "recalls_tagged_pct", "tag_backlog", "claude_calls", "claude_cost_usd", "risk_high_30d",
+    "risk_watch_30d", "weekly_events_last", "weekly_signal", "checks_warned", "checks_failed",
+    "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
@@ -104,6 +112,7 @@ DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PAT
                                RECALL_DRUGS_PATH, SHORTAGE_DRUGS_PATH, LINKS_PATH,
                                UNMATCHED_PATH, ROOT_CAUSES_PATH, CLAUDE_TAGS_PATH,
                                TAG_REVIEW_PATH, CLAUDE_DRUGS_PATH, EXTRACT_REVIEW_PATH,
+                               RISK_PATH, RISK_LOG_PATH, MAKERS_PATH, WEEKLY_PATH,
                                STATE_PATH)]
 
 
@@ -392,7 +401,15 @@ def write_summary(stats):
         ("Unsure tags to review", f"{stats.get('to_review', 0):,} reasons, covering "
                                   f"{stats.get('to_review_recalls', 0):,} recalls"),
         ("Claude this run", f"{calls:,} calls, about ${spent:.2f}"),
+        ("Risk flags, last 30 days", f"{stats.get('risk_high_30d', 0):,} high, "
+                                     f"{stats.get('risk_watch_30d', 0):,} watch, "
+                                     f"{stats.get('risk_low_30d', 0):,} low"),
     ]
+    if stats.get("weekly_ucl") is not None:
+        flag = {"above": ", above normal", "below": ", below normal"}.get(stats.get("weekly_signal"), "")
+        rows.append(("Recall events last week",
+                     f"{stats.get('weekly_events_last', 0)} in the week of {stats.get('weekly_week')}, "
+                     f"normal range {stats['weekly_lcl']:.0f} to {stats['weekly_ucl']:.0f}{flag}"))
     with open(path, "a", encoding="utf-8") as fh:
         fh.write("\n## Pipeline numbers\n\n| What | Value |\n|---|---|\n")
         for name, value in rows:
@@ -547,7 +564,26 @@ def run(data_dir, now, stats):
             state["last_run"] = now.isoformat(timespec="seconds")
             write_state(state, state_path)
 
-            # 8. Data checks. A failed error check stops the run before anything is saved.
+            # 8. Risk flags, maker counts and the weekly control chart
+            k = build_risk(recalls, stage / ROOT_CAUSES_PATH.name, stage / RECALL_DRUGS_PATH.name,
+                           ndc, stage / RISK_PATH.name, stage / MAKERS_PATH.name,
+                           stage / RISK_LOG_PATH.name, workdir, today)
+            w = build_control_chart(recalls, stage / WEEKLY_PATH.name, workdir, today)
+            stats.update(risk_high_30d=k["recent"]["high"], risk_watch_30d=k["recent"]["watch"],
+                         risk_low_30d=k["recent"]["low"], weekly_events_last=w["last_events"],
+                         weekly_signal=w["signal"], weekly_week=w["last_week"],
+                         weekly_ucl=w["ucl"], weekly_lcl=w["lcl"])
+            print(f"Risk flags: recalls reported in the last 30 days are "
+                  f"{k['recent']['high']:,} high, {k['recent']['watch']:,} watch and "
+                  f"{k['recent']['low']:,} low. {k['logged']:,} new ones logged. Labelers counted "
+                  f"for {k['drugs_with_labelers']:,} drugs")
+            if w["ucl"] is not None:
+                print(f"Control chart: {w['last_events']} recall events in the week of "
+                      f"{w['last_week']}, normal range {w['lcl']:.0f} to {w['ucl']:.0f}"
+                      + (f", {w['signal']} normal" if w["signal"] else "")
+                      + f". {w['recent_signals']} unusual weeks in the last 13")
+
+            # 9. Data checks. A failed error check stops the run before anything is saved.
             checks = collect_checks(con, {
                 "recalls": recalls,
                 "snapshots": stage / SNAPSHOTS_PATH.name,

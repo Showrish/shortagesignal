@@ -3,6 +3,15 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-10-16
+### Added
+- Root-cause tagging for every recall: SQL rules first, Claude Haiku for the rest, scored against the hand audit
+- Claude names the drug for recalls matching can't, checked against known drug names, with before and after match rates
+- Recall-to-shortage analysis by root cause, counted by recall event
+- A risk flag on every recall, maker counts from the NDC directory, and a control chart on weekly recall events
+- A Pipeline numbers table on the run page
+
 ### Added
 - Root-cause tagging: SQL rules first, Claude Haiku for the rest, cached answers, a review list, and an evaluation against the hand audit
 
