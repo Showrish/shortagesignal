@@ -240,3 +240,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** a Streamlit app on Community Cloud that downloads the pipeline's Parquet files from the `data` branch over HTTPS, caches them for an hour, and queries them with DuckDB. The analysis tab runs the SQL files in `sql/`. The app has its own small requirements file, so it doesn't install the pipeline.
 - **Why:** the daily run already publishes its files to the `data` branch, so the dashboard stays current with no database, no extra service and no redeploys. Reusing the SQL files means the dashboard and the analysis can't disagree.
 - **Passed on:** a hosted database, and committing data to `main` so the app could read it
+
+## 2026-10-18: a weekly digest counted from the tables, emailed only when set up
+- **Chose:** a Monday workflow that builds the digest and an Excel list of items that need a look (flagged recalls, recalls of drugs already in shortage, unsure root-cause tags, drug names Claude suggested that weren't used). Every sentence is filled in from counts, with no AI writing it. It's emailed over SMTP when the secrets exist, and always shown on the run page and kept as an artifact.
+- **Why:** a digest people act on has to be checkable, so every number traces back to a table. Making the email optional means the workflow never fails for lack of an account, and no password lives in the code.
+- **Passed on:** having Claude write the summary, and an email service that needs its own account and domain

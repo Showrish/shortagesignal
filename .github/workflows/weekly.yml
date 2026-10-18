@@ -1,0 +1,49 @@
+name: Weekly digest
+
+# Every Monday at 13:00 UTC, an hour after the daily run, and on demand from the Actions tab.
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read   # it only reads the data branch
+
+concurrency:
+  group: daily-pipeline   # waits for a daily run that's still going
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHORTAGESIGNAL_DATA_DIR: ${{ github.workspace }}/datastore
+      DIGEST_SMTP_USER: ${{ secrets.DIGEST_SMTP_USER }}
+      DIGEST_SMTP_PASSWORD: ${{ secrets.DIGEST_SMTP_PASSWORD }}
+      DIGEST_TO: ${{ secrets.DIGEST_TO }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get the latest data
+        uses: actions/checkout@v6
+        with:
+          ref: data
+          path: datastore
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Build the digest, and email it if the email is set up
+        run: python -m shortagesignal.digest --send --out digest
+
+      - name: Keep the digest and the Excel list
+        uses: actions/upload-artifact@v6
+        with:
+          name: weekly-digest-${{ github.run_number }}
+          path: digest/
+          retention-days: 90

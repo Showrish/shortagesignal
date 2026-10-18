@@ -89,6 +89,12 @@ streamlit run app/streamlit_app.py
 ```
 The live dashboard runs on Streamlit Community Cloud. It reads the pipeline's latest files straight from the `data` branch, at most once an hour, so it shows each daily run without being redeployed. It has the recent risk flags, the weekly control chart, and the recall-to-shortage analysis, which runs the same SQL files that are in `sql/`. Put `SHORTAGESIGNAL_DATA=local` in front of the second command to read the local `data/` folder instead.
 
+## Weekly digest and Excel list (Day 12)
+```
+python -m shortagesignal.digest
+```
+Every Monday, `.github/workflows/weekly.yml` builds a plain-English digest of the week from the pipeline's tables: how many recalls FDA reported against the normal range, the recalls flagged high or watch, recalls of drugs already in shortage, changes to FDA's shortage list, and pipeline health. It comes with an Excel list of items that need a look. The digest shows on the run page and both files are kept as run artifacts. It's also emailed when the `DIGEST_SMTP_USER` and `DIGEST_SMTP_PASSWORD` secrets are set, for Gmail with an app password.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
