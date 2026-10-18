@@ -13,8 +13,9 @@ instead of GitHub.
 """
 import os
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import altair as alt
 import duckdb
@@ -23,6 +24,10 @@ import requests
 import streamlit as st
 
 REPO = "Showrish/shortagesignal"
+REPO_URL = f"https://github.com/{REPO}"
+GITHUB_PROFILE = "https://github.com/Showrish"
+LINKEDIN_URL = "https://www.linkedin.com/in/showrish-reddy-sampath-b508a22a6"  
+BOSTON = ZoneInfo("America/New_York")
 DATA_URL = f"https://raw.githubusercontent.com/{REPO}/data/"
 ROOT = Path(__file__).resolve().parents[1]
 VIEWS = {   # table name in the SQL -> file on the data branch
@@ -33,7 +38,9 @@ VIEWS = {   # table name in the SQL -> file on the data branch
     "weekly_recalls": "weekly_recalls.parquet",
     "shortages_current": "shortages_current.parquet",
 }
-RED, GRAY = "#d62728", "#888888"
+# One palette for every chart
+BLUE, GRAY, RED, ORANGE = "#2E6FD8", "#8C8C8C", "#D64545", "#E8913A"
+FLAG_LABELS = {"high": "🔴 High", "watch": "🟠 Watch", "low": "⚪ Low"}
 
 st.set_page_config(page_title="ShortageSignal", page_icon="💊", layout="wide")
 
@@ -63,6 +70,10 @@ def sql_file(name):
     return path.read_text().strip().rstrip(";") if path.exists() else None
 
 
+def nice_date(value):
+    return f"{value:%b} {value.day}, {value.year}"
+
+
 try:
     con = connect()
     run_log = pd.read_csv(fetch("run_log.csv"))
@@ -74,22 +85,34 @@ except Exception as exc:   # show the problem on the page instead of a stack tra
 
 # The latest run that got as far as the numbers. A failed run's row has blanks.
 last = run_log.dropna(subset=["recalls_total", "recalls_named_pct", "recalls_linked"]).iloc[-1]
+# The run log is in UTC. Show Boston time, which is EDT or EST depending on the season.
+updated = datetime.fromisoformat(str(last["run_at_utc"])).replace(tzinfo=timezone.utc).astimezone(BOSTON)
+today = datetime.now(BOSTON).date()
+newest = con.execute(
+    "SELECT max(TRY_STRPTIME(report_date, '%Y%m%d'))::DATE FROM recalls").fetchone()[0]
+
 st.title("ShortageSignal")
-st.write("Every day, a pipeline pulls FDA drug recalls and the drug shortage list, works out "
-         "which drug each recall is about, tags why it happened, links recalls to shortages, "
-         "and flags the recalls worth watching.")
-st.caption(f"Data from the pipeline run at {last['run_at_utc']} UTC. "
-           f"[Code and docs on GitHub](https://github.com/{REPO})")
+st.markdown("Every day, a pipeline pulls FDA drug recalls and the drug shortage list, works out "
+            "which drug each recall is about, tags why it happened, links recalls to shortages, "
+            "and flags the recalls worth watching.")
+st.caption(f"Updated {nice_date(updated)}, {updated.hour % 12 or 12}:{updated:%M %p %Z}. "
+           f"FDA's newest recall report: {nice_date(newest)} ({(today - newest).days} days ago).")
 
 current = con.execute("""
     SELECT COUNT(DISTINCT shortage_key) FROM shortages_current
     WHERE list_type = 'shortage' AND lower(status) = 'current'
 """).fetchone()[0]
 a, b, c, d = st.columns(4)
-a.metric("Recalls since 2012", f"{int(last['recalls_total']):,}")
-b.metric("Drug named", f"{float(last['recalls_named_pct']):.0f}%")
-c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}")
-d.metric("Shortages FDA lists today", f"{current:,}")
+a.metric("Recalls since 2012", f"{int(last['recalls_total']):,}",
+         help="Every drug recall in FDA's enforcement reports since June 2012.")
+b.metric("Drug named", f"{float(last['recalls_named_pct']):.0f}%",
+         help="Recalls where the pipeline worked out which drug it is, from NDC codes, the "
+              "product text, or Claude.")
+c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}",
+         help="Recalls of a drug that's on FDA's shortage list, by package, product, "
+              "drug and company, or drug.")
+d.metric("Shortages FDA lists today", f"{current:,}",
+         help="Current listings on FDA's drug shortage list.")
 
 flags, weekly, follows, about = st.tabs(
     ["Risk flags", "Weekly recalls", "What follows a recall", "About"])
@@ -100,10 +123,11 @@ with flags:
     left, right = st.columns([1, 2])
     days = left.selectbox("Recalls reported in the last", [30, 90, 365],
                           format_func=lambda n: f"{n} days")
-    levels = right.multiselect("Flags", ["high", "watch", "low"], default=["high", "watch"])
+    levels = right.multiselect("Flags", ["high", "watch", "low"], default=["high", "watch"],
+                               format_func=lambda f: FLAG_LABELS[f])
     recent = con.execute("""
         SELECT k.flag, k.points,
-               strftime(TRY_STRPTIME(k.report_date, '%Y%m%d'), '%Y-%m-%d') AS reported,
+               TRY_STRPTIME(k.report_date, '%Y%m%d')::DATE AS reported,
                k.recall_number, r.recalling_firm AS firm, k.drug_key AS drug, k.root_cause,
                k.reasons, k.recall_class AS class, r.product_description AS product
         FROM recall_risk AS k
@@ -113,14 +137,36 @@ with flags:
     """, [date.today() - timedelta(days=days)]).df()
     counts = recent["flag"].value_counts()
     x, y, z = st.columns(3)
-    x.metric("High", int(counts.get("high", 0)))
-    y.metric("Watch", int(counts.get("watch", 0)))
-    z.metric("Low", int(counts.get("low", 0)))
-    st.dataframe(recent[recent["flag"].isin(levels)], hide_index=True)
-    st.caption("Points: 2 for a Sterility root cause, 2 when only 1 or 2 companies list the drug "
-               "in the NDC directory (1 for 3 to 5), and 1 for an injectable. 4 or more is high, "
-               "2 or 3 is watch. On recall events since 2020, high flags were followed by a "
-               "shortage about 4 times as often as average, and watch about 2 times.")
+    x.metric("🔴 High", int(counts.get("high", 0)))
+    y.metric("🟠 Watch", int(counts.get("watch", 0)))
+    z.metric("⚪ Low", int(counts.get("low", 0)))
+
+    view = recent[recent["flag"].isin(levels)].copy()
+    view["flag"] = view["flag"].map(FLAG_LABELS)
+    view["drug"] = view["drug"].fillna("(not named)").str.capitalize()
+    view["reasons"] = view["reasons"].fillna("").str.capitalize()
+    st.dataframe(view, hide_index=True, column_config={
+        "flag": st.column_config.TextColumn("Flag"),
+        "points": st.column_config.NumberColumn("Points", help="0 to 5. 4 or more is high."),
+        "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
+        "recall_number": st.column_config.TextColumn("Recall"),
+        "firm": st.column_config.TextColumn("Firm"),
+        "drug": st.column_config.TextColumn("Drug"),
+        "root_cause": st.column_config.TextColumn("Root cause"),
+        "reasons": st.column_config.TextColumn("Why flagged"),
+        "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the most serious."),
+        "product": st.column_config.TextColumn("Product", width="large"),
+    })
+    st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
+                       file_name=f"shortagesignal_flags_{date.today()}.csv", mime="text/csv")
+    with st.expander("How to read this"):
+        st.markdown(
+            "Each recall gets points for the signs that came before past shortages: **2** for a "
+            "sterility problem, **2** when only 1 or 2 companies make the drug (**1** for 3 to 5), "
+            "and **1** for an injectable. **4 or more is high, 2 or 3 is watch.**\n\n"
+            "On recall events since 2020, high flags were followed by a shortage about **4 times** "
+            "as often as average, and watch flags about **2 times**. Most recalls never lead to a "
+            "shortage, so this is a watch list, not a prediction.")
 
 # ---------------------------------------------------------------- control chart
 
@@ -129,19 +175,31 @@ with weekly:
         SELECT * FROM weekly_recalls
         WHERE week >= (SELECT max(week) FROM weekly_recalls) - INTERVAL 104 WEEK
     """).df()
-    base = alt.Chart(chart).encode(x=alt.X("week:T", title=None))
-    events = base.mark_line(point=True).encode(
-        y=alt.Y("events:Q", title="Recall events per week"),
-        tooltip=[alt.Tooltip("week:T", title="Week of"), "events:Q", "recalls:Q"])
-    center = base.mark_line(strokeDash=[4, 4], color=GRAY).encode(y="center:Q")
-    upper = base.mark_line(strokeDash=[2, 2], color=RED).encode(y="ucl:Q")
-    lower = base.mark_line(strokeDash=[2, 2], color=RED).encode(y="lcl:Q")
-    unusual = base.transform_filter(alt.datum.signal != "").mark_point(
-        color=RED, size=90, filled=True).encode(y="events:Q")
-    st.altair_chart(events + center + upper + lower + unusual)
-    st.caption("A control chart (XmR) on recall events per week, by FDA report week. The dashed "
-               "lines are the average and the normal range, set from the two years before the "
-               "last 13 weeks. Red dots are weeks outside that range.")
+    names = {"events": "Recall events", "center": "Average", "ucl": "Normal range", "lcl": "Normal range"}
+    long = chart.melt(id_vars=["week"], value_vars=list(names), var_name="series", value_name="value")
+    long["line"] = long["series"].map(names)
+    lines = alt.Chart(long).mark_line().encode(
+        x=alt.X("week:T", title=None),
+        y=alt.Y("value:Q", title="Recall events per week"),
+        color=alt.Color("line:N", title=None, legend=alt.Legend(orient="top"),
+                        scale=alt.Scale(domain=["Recall events", "Average", "Normal range"],
+                                        range=[BLUE, GRAY, RED])),
+        strokeDash=alt.condition(alt.datum.line == "Recall events", alt.value([1, 0]), alt.value([5, 4])),
+        detail="series:N",
+        tooltip=[alt.Tooltip("week:T", title="Week of"), alt.Tooltip("line:N", title="Line"),
+                 alt.Tooltip("value:Q", title="Value", format=".1f")])
+    unusual = alt.Chart(chart[chart["signal"].fillna("") != ""]).mark_point(
+        color=RED, size=110, filled=True).encode(
+        x="week:T", y="events:Q",
+        tooltip=[alt.Tooltip("week:T", title="Unusual week of"), alt.Tooltip("events:Q", title="Recall events")])
+    st.altair_chart(lines + unusual)
+    with st.expander("How to read this"):
+        st.markdown(
+            "This is a control chart of recall events per week, by the week FDA reported them. "
+            "The red dashed lines mark the normal range, set from the two years before the last "
+            "13 weeks. A **red dot** is a week outside that range, which is worth a closer look. "
+            "Events are counted instead of recall numbers, since one event can cover hundreds of "
+            "products.")
 
 # ---------------------------------------------------------------- the analysis
 
@@ -154,28 +212,42 @@ with follows:
         total, hit = int(lag["events"].sum()), int(lag["followed"].sum())
         st.subheader(f"About {100 * hit / total:.0f}% of recall events since 2020 were followed "
                      "within a year by a shortage FDA still lists")
-        st.write(f"{hit} of {total:,} events. Sterility recalls stand out, at about three times the "
-                 "average, usually 4 to 5 months later. Counts are by recall event, since one "
-                 "event can cover hundreds of products.")
-        st.altair_chart(alt.Chart(lag).mark_bar().encode(
-            x=alt.X("pct_followed:Q", title="% of events followed by a shortage within a year"),
+        st.markdown(f"{hit} of {total:,} events. **Sterility recalls stand out**, at about three times "
+                    "the average, usually 4 to 5 months later.")
+        lag["label"] = lag["pct_followed"].map(lambda v: f"{v:.1f}%")
+        base = alt.Chart(lag).encode(
             y=alt.Y("root_cause:N", sort="-x", title=None),
+            x=alt.X("pct_followed:Q", title="% of recall events followed by a shortage within a year"))
+        bars = base.mark_bar().encode(
             color=alt.condition(alt.datum.root_cause == "Sterility", alt.value(RED), alt.value(GRAY)),
-            tooltip=["root_cause:N", "events:Q", "followed:Q", "pct_followed:Q", "median_days:Q"]))
-        st.dataframe(lag, hide_index=True)
+            tooltip=[alt.Tooltip("root_cause:N", title="Root cause"),
+                     alt.Tooltip("events:Q", title="Recall events"),
+                     alt.Tooltip("followed:Q", title="Followed by a shortage"),
+                     alt.Tooltip("median_days:Q", title="Median days", format=".0f")])
+        st.altair_chart(bars + base.mark_text(align="left", dx=4).encode(text="label:N"))
+        st.dataframe(lag.drop(columns=["label"]), hide_index=True, column_config={
+            "root_cause": st.column_config.TextColumn("Root cause"),
+            "events": st.column_config.NumberColumn("Recall events", format="%d"),
+            "followed": st.column_config.NumberColumn("Followed by a shortage", format="%d"),
+            "pct_followed": st.column_config.NumberColumn("Share", format="%.1f%%"),
+            "median_days": st.column_config.NumberColumn("Median days to the shortage", format="%d"),
+        })
     backtest = ROOT / "audit" / "risk_backtest.md"
     if backtest.exists():
         with st.expander("How the risk flag did on past recall events"):
             st.markdown(backtest.read_text())
-    st.caption("Limits: FDA's shortage feed mostly lists shortages that are still going on, so "
-               "shortages that ended long ago are missing. Some links are drug-level only, so a "
-               "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
-               "since October 11, 2026, so new shortages are all kept from here on.")
+    with st.expander("How to read this, and its limits"):
+        st.markdown(
+            "Each recall event is followed for a year to see whether FDA posted a shortage of the "
+            "same drug. **Limits:** FDA's shortage feed mostly lists shortages that are still going "
+            "on, so ones that ended long ago are missing. Some links are by drug name only, so a "
+            "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
+            "since October 11, 2026, so every new shortage is kept from here on.")
 
 # ---------------------------------------------------------------- about
 
 with about:
-    st.markdown(f"""
+    st.markdown("""
 **What runs every day, on GitHub Actions**
 1. Pulls FDA's drug recall reports, the drug shortage list and the NDC directory from openFDA.
 2. Works out which drug each recall is about: NDC codes, then the product text, then Claude
@@ -187,8 +259,17 @@ with about:
 5. Flags each recall's shortage risk and charts weekly recall events.
 6. Runs 16 data quality checks, and saves nothing if one fails.
 
-**Data:** [openFDA](https://open.fda.gov/) drug enforcement reports, drug shortages and the
-NDC directory. Everything is public, and nothing here is medical advice.
+Every Monday, a digest of the week goes out by email, with an Excel list of items that need a
+look.
 
-[Code, decision log and docs on GitHub](https://github.com/{REPO})
+**Data:** [openFDA](https://open.fda.gov/) drug enforcement reports, drug shortages and the NDC
+directory. Everything is public, and nothing here is medical advice.
 """)
+
+# ---------------------------------------------------------------- footer
+
+st.divider()
+links = [f"[GitHub]({GITHUB_PROFILE})", f"[Project code and docs]({REPO_URL})"]
+if LINKEDIN_URL:
+    links.insert(0, f"[LinkedIn]({LINKEDIN_URL})")
+st.caption("Built by Showrish Reddy Sampath · " + " · ".join(links))
