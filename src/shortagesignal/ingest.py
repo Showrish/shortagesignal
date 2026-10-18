@@ -102,6 +102,7 @@ RUN_LOG_COLUMNS = [
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
     "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_named_pct_before",
     "recalls_named_pct", "recalls_named_by_claude", "extract_calls", "extract_cost_usd",
+    "extract_waiting",
     "recalls_tagged_pct", "tag_backlog", "claude_calls", "claude_cost_usd", "risk_high_30d",
     "risk_watch_30d", "weekly_events_last", "weekly_signal", "checks_warned", "checks_failed",
     "error",
@@ -526,6 +527,7 @@ def run(data_dir, now, stats):
                          recalls_named_pct=m["named_pct"],
                          recalls_named_by_claude=m["by_source"].get("claude", 0),
                          extract_calls=xs["calls"], extract_cost_usd=xs["cost"],
+                         extract_waiting=xs["waiting"],
                          unmatched_before=before["unmatched"],
                          linked_before=before["linked_recalls"])
             levels = ", ".join(f"{name.replace('_', ' ')} {n:,}" for name, n in m["by_level"].items())

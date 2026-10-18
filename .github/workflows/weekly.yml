@@ -22,6 +22,9 @@ jobs:
       DIGEST_SMTP_USER: ${{ secrets.DIGEST_SMTP_USER }}
       DIGEST_SMTP_PASSWORD: ${{ secrets.DIGEST_SMTP_PASSWORD }}
       DIGEST_TO: ${{ secrets.DIGEST_TO }}
+      CLAUDE_CREDITS_USD: ${{ vars.CLAUDE_CREDITS_USD }}
+      CLAUDE_CREDITS_SINCE: ${{ vars.CLAUDE_CREDITS_SINCE }}
+      CLAUDE_KEY_EXPIRES: ${{ vars.CLAUDE_KEY_EXPIRES }}
     steps:
       - uses: actions/checkout@v6
 

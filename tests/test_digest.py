@@ -10,9 +10,11 @@ from shortagesignal.digest import (
     compose,
     email_settings,
     gather,
+    keeping_it_running,
     to_html,
     to_markdown,
     to_text,
+    upkeep,
     write_workbook,
 )
 
@@ -74,11 +76,13 @@ def _fixture(tmp_path):
     p["run_log"] = tmp_path / "run_log.csv"
     _csv(p["run_log"], [
         {"run_at_utc": "2026-10-01T12:00:00", "status": "success", "checks_warned": "0",
-         "claude_cost_usd": "1.00", "extract_cost_usd": "0"},
+         "claude_cost_usd": "1.00", "extract_cost_usd": "0", "tag_backlog": "0",
+         "extract_waiting": "0"},
         *[{"run_at_utc": f"2026-10-{day}T12:00:00", "status": "success", "checks_warned": "0",
-           "claude_cost_usd": "0.01", "extract_cost_usd": "0.01"} for day in (13, 14, 15, 16, 17)],
+           "claude_cost_usd": "0.01", "extract_cost_usd": "0.01", "tag_backlog": "2",
+           "extract_waiting": "1"} for day in (13, 14, 15, 16, 17)],
         {"run_at_utc": "2026-10-18T12:00:00", "status": "failed", "checks_warned": "1",
-         "claude_cost_usd": "", "extract_cost_usd": ""},
+         "claude_cost_usd": "", "extract_cost_usd": "", "tag_backlog": "", "extract_waiting": ""},
     ])
     p["tag_review"] = tmp_path / "tag_review.csv"
     _csv(p["tag_review"], [
@@ -99,8 +103,12 @@ def _fixture(tmp_path):
     return p
 
 
+NO_SETTINGS = {"bought": None, "since": None, "key_expires": None}
+
+
 def test_gather_counts_the_week(tmp_path):
-    f = gather(TODAY, _fixture(tmp_path))
+    f = gather(TODAY, _fixture(tmp_path), NO_SETTINGS)
+    assert f["waiting"] == 3                   # the latest run that worked: 2 tags and 1 drug name
     assert (f["recalls"], f["events"], f["high"], f["watch"]) == (3, 2, 1, 1)
     assert [r["recall_number"] for r in f["flagged"]] == ["D-1", "D-2"]        # highest points first
     assert [(r["recall_number"], r["drug"]) for r in f["in_shortage"]] == [("D-2", "dopamine hydrochloride")]
@@ -112,7 +120,7 @@ def test_gather_counts_the_week(tmp_path):
 
 
 def test_compose_says_it_in_plain_english(tmp_path):
-    subject, sections = compose(gather(TODAY, _fixture(tmp_path)))
+    subject, sections = compose(gather(TODAY, _fixture(tmp_path), NO_SETTINGS))
     assert subject == "ShortageSignal weekly, Oct 19: 1 high and 1 watch recalls"
     text = to_text(subject, sections)
     assert "FDA reported 3 recalls from 2 recall events" in text
@@ -121,7 +129,7 @@ def test_compose_says_it_in_plain_english(tmp_path):
     assert "5 of 6 pipeline runs worked this week, with 1 data check warning." in text
     assert "| high | hypromellose | Aurolab |" in to_markdown(subject, sections)
     assert "<h3>Recalls worth watching</h3>" in to_html(subject, sections)
-    assert "cost" not in text.lower()          # costs are for developers, not this digest
+    assert "$" not in text.split("KEEPING IT RUNNING")[0]   # no money in the reader's part
 
 
 def test_compose_handles_a_quiet_week():
@@ -138,7 +146,7 @@ def test_compose_handles_a_quiet_week():
 
 
 def test_workbook_has_a_sheet_per_list(tmp_path):
-    path = write_workbook(gather(TODAY, _fixture(tmp_path)), tmp_path / "out" / "needs_a_look.xlsx")
+    path = write_workbook(gather(TODAY, _fixture(tmp_path), NO_SETTINGS), tmp_path / "out" / "needs_a_look.xlsx")
     wb = load_workbook(path)
     assert wb.sheetnames == ["Flagged this week", "Already in shortage", "Unsure tags",
                              "Drug names not used"]
@@ -157,7 +165,7 @@ def test_email_settings_and_message(tmp_path, monkeypatch):
     settings = email_settings()
     assert (settings["to"], settings["host"], settings["port"]) == ("me@example.com", "smtp.gmail.com", 587)
 
-    attachment = write_workbook(gather(TODAY, _fixture(tmp_path)), tmp_path / "list.xlsx")
+    attachment = write_workbook(gather(TODAY, _fixture(tmp_path), NO_SETTINGS), tmp_path / "list.xlsx")
     message = build_message("Subject line", "text", "<p>page</p>", attachment, settings)
     assert message["Subject"] == "Subject line" and message["To"] == "me@example.com"
     assert [part.get_filename() for part in message.iter_attachments()] == ["list.xlsx"]
@@ -168,3 +176,39 @@ def test_workbook_drops_characters_excel_cannot_store(tmp_path):
              "in_shortage": [], "tag_review": [], "extract_review": []}
     wb = load_workbook(write_workbook(facts, tmp_path / "list.xlsx"))
     assert wb["Flagged this week"]["J2"].value == "Methylprednisolone 40 mg/mL vial"
+
+
+def _weekly_runs():
+    """A $1.50 backfill in the first week, then $0.07 a week: one Tuesday run each week."""
+    runs = [{"run_at_utc": "2026-09-15T12:00:00", "status": "success",
+             "claude_cost_usd": "1.00", "extract_cost_usd": "0.50"}]
+    for day in ("2026-09-22", "2026-09-29", "2026-10-06", "2026-10-13"):
+        runs.append({"run_at_utc": f"{day}T12:00:00", "status": "success",
+                     "claude_cost_usd": "0.03", "extract_cost_usd": "0.04"})
+    runs.append({"run_at_utc": "2026-08-01T12:00:00", "status": "success",   # before buying
+                 "claude_cost_usd": "9.00", "extract_cost_usd": "0"})
+    return runs
+
+
+def test_upkeep_estimates_credits_from_the_usual_week():
+    settings = {"bought": 5.0, "since": date(2026, 9, 14), "key_expires": date(2027, 4, 13)}
+    f = upkeep(_weekly_runs(), TODAY, settings)
+    c = f["credits"]
+    assert (c["spent"], c["left"], c["per_week"]) == (1.78, 3.22, 0.07)   # the backfill week is outvoted
+    assert round(c["days_left"]) == 322
+    assert f["key_days"] == 176
+    lines = keeping_it_running(f)
+    assert "about $3.22 left of the $5.00 bought on Sep 14, 2026" in lines[1]
+    assert "about $0.07 a week, that lasts about 11 months" in lines[1]
+    assert lines[2] == "The Claude API key expires on Apr 13, 2027, in 176 days."
+
+
+def test_upkeep_waits_for_enough_history_and_warns():
+    settings = {"bought": 5.0, "since": date(2026, 10, 13), "key_expires": date(2026, 11, 1)}
+    runs = [{"run_at_utc": "2026-10-14T12:00:00", "status": "success", "claude_cost_usd": "4.40",
+             "extract_cost_usd": "0", "tag_backlog": "4", "extract_waiting": "0"}]
+    lines = keeping_it_running(upkeep(runs, TODAY, settings))
+    assert lines[0].startswith("4 recalls are waiting for Claude")
+    assert "There isn't enough history yet" in lines[1] and "Top up soon." in lines[1]
+    assert "in 13 days. Make a new one soon" in lines[2]
+    assert keeping_it_running({"waiting": 0})[0] == "No recalls are waiting for Claude."
