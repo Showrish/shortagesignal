@@ -39,6 +39,9 @@ def test_is_injectable():
     assert not is_injectable("Amoxicillin 500 mg capsules")
     assert not is_injectable("Ivermectin 3 mg tablets")
     assert not is_injectable(None)
+    assert is_injectable("Carboplatin 10 mg/mL, 45 mL vial")                  # a vial counts
+    assert not is_injectable("Lubricant Eye Drops, 0.4 mL single-use vials")   # unless it's for the eye
+    assert is_injectable("Ceftriaxone for Injection, antibiotic, 1 g vial")   # "otic" inside a word
 
 
 def test_control_limits_use_the_moving_range():

@@ -46,7 +46,10 @@ from shortagesignal.storage import load_batch, write_parquet
 
 WEEKLY_SQL = ROOT / "sql" / "weekly_recall_events.sql"
 BACKTEST_RESULTS = ROOT / "audit" / "risk_backtest.md"
-INJECTABLE = re.compile(r"inject|vial|syringe|infusion|intraven|ampul|\bi\.?v\.?\b", re.I)
+INJECTABLE = re.compile(r"inject|syringe|infusion|intraven|ampul|\bi\.?v\.?\b", re.I)
+VIAL = re.compile(r"\bvials?\b", re.I)
+# Eye drops and the like often come in single-use vials, but they aren't injected.
+NOT_INJECTED = re.compile(r"ophthalmic|\beyes?\b|\botic\b|\bears?\b|nasal|inhal", re.I)
 REPACKAGER = re.compile(r"repack|relabel", re.I)
 RISK_COLUMNS = ["recall_number", "event_id", "report_date", "recall_class", "root_cause",
                 "drug_key", "labelers", "injectable", "points", "flag", "reasons"]
@@ -58,7 +61,11 @@ LEVELS = ["high", "watch", "low"]
 # ---------------------------------------------------------------- the flag
 
 def is_injectable(description):
-    return bool(description and INJECTABLE.search(description))
+    if not description:
+        return False
+    if INJECTABLE.search(description):
+        return True
+    return bool(VIAL.search(description)) and not NOT_INJECTED.search(description)
 
 
 def score_recall(root_cause, labelers, injectable):

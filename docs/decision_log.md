@@ -235,3 +235,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** weekly recall events by FDA report week, with limits from the two years before the last 13 weeks, using the moving range (an XmR chart).
 - **Why:** weekly counts vary more than a Poisson c-chart assumes, so a c-chart would flag too many ordinary weeks. Counting events keeps one big recall from looking like a crisis week.
 - **Passed on:** a c-chart, and counting recall numbers
+
+## 2026-10-16: the dashboard reads the data branch directly
+- **Chose:** a Streamlit app on Community Cloud that downloads the pipeline's Parquet files from the `data` branch over HTTPS, caches them for an hour, and queries them with DuckDB. The analysis tab runs the SQL files in `sql/`. The app has its own small requirements file, so it doesn't install the pipeline.
+- **Why:** the daily run already publishes its files to the `data` branch, so the dashboard stays current with no database, no extra service and no redeploys. Reusing the SQL files means the dashboard and the analysis can't disagree.
+- **Passed on:** a hosted database, and committing data to `main` so the app could read it

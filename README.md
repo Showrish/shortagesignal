@@ -82,6 +82,13 @@ python -m shortagesignal.risk backtest
 ```
 About 2% of recall events since 2020 were followed within a year by a shortage FDA still lists today, usually 3 to 5 months later. Sterility recalls stand out at about three times the average. Every recall gets a risk flag from simple points (a Sterility root cause, how many companies list the drug, an injectable product), new recalls are logged with the flag they got that day, and a control chart marks weeks with unusually many recall events. The queries behind the analysis are in `sql/`.
 
+## Dashboard (Day 11)
+```
+pip install -r app/requirements.txt
+streamlit run app/streamlit_app.py
+```
+The live dashboard runs on Streamlit Community Cloud. It reads the pipeline's latest files straight from the `data` branch, at most once an hour, so it shows each daily run without being redeployed. It has the recent risk flags, the weekly control chart, and the recall-to-shortage analysis, which runs the same SQL files that are in `sql/`. Put `SHORTAGESIGNAL_DATA=local` in front of the second command to read the local `data/` folder instead.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
