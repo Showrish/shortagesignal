@@ -11,6 +11,14 @@ run, on the data branch's files. The email only goes out when these settings exi
   DIGEST_SMTP_HOST, DIGEST_SMTP_PORT       default smtp.gmail.com and 587
 Without them, the digest still shows on the run page and both files are saved as artifacts.
 
+The "Keeping it running" section at the end uses three optional settings (GitHub repository
+variables, not secrets):
+  CLAUDE_CREDITS_USD     the credits bought, like 5.00
+  CLAUDE_CREDITS_SINCE   the day they were bought, like 2026-10-13
+  CLAUDE_KEY_EXPIRES     the day the Claude API key expires, like 2027-04-13
+Anthropic has no API that reports the balance for individual accounts, so credits left is an
+estimate: the credits bought minus what the pipeline's runs logged spending since then.
+
 Every number in the digest is counted from the pipeline's tables. No AI writes it, so each
 line can be traced back to the data.
 """
@@ -20,8 +28,10 @@ import html
 import os
 import smtplib
 import ssl
+import statistics
 import sys
-from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -71,7 +81,62 @@ def _number(value):
         return 0.0
 
 
-def gather(today, paths=None):
+def _day(text):
+    try:
+        return date.fromisoformat(str(text).strip()[:10])
+    except ValueError:
+        return None
+
+
+def upkeep_settings():
+    """The optional CLAUDE_ settings, read from the environment."""
+    try:
+        bought = float(os.getenv("CLAUDE_CREDITS_USD") or "nan")
+    except ValueError:
+        bought = float("nan")
+    return {"bought": None if bought != bought else bought,     # nan means not set
+            "since": _day(os.getenv("CLAUDE_CREDITS_SINCE") or ""),
+            "key_expires": _day(os.getenv("CLAUDE_KEY_EXPIRES") or "")}
+
+
+def upkeep(all_runs, today, settings):
+    """What it takes to keep the pipeline running: credits, the API key, and recalls waiting
+    for Claude. Credits left is the amount bought minus the Claude cost every run logged since.
+    Days left uses the median weekly spend over the last 4 full weeks, once there are at least
+    3, so a one-off backfill week doesn't make the credits look like they're about to run out."""
+    latest = next((r for r in reversed(all_runs) if r.get("status") == "success"), {})
+    facts = {"waiting": int(_number(latest.get("tag_backlog")) + _number(latest.get("extract_waiting"))),
+             "credits": None, "key_days": None, "key_expires": settings.get("key_expires")}
+    if facts["key_expires"]:
+        facts["key_days"] = (facts["key_expires"] - today).days
+
+    bought, since = settings.get("bought"), settings.get("since")
+    if bought is None or since is None:
+        return facts
+    weekly = defaultdict(float)
+    spent = 0.0
+    for r in all_runs:
+        day = _day(r.get("run_at_utc", ""))
+        if day is None or day < since:
+            continue
+        cost = _number(r.get("claude_cost_usd")) + _number(r.get("extract_cost_usd"))
+        spent += cost
+        weekly[day - timedelta(days=day.weekday())] += cost
+    this_week = today - timedelta(days=today.weekday())
+    first_week = since - timedelta(days=since.weekday())
+    full_weeks = [this_week - timedelta(weeks=n) for n in range(1, 5)]
+    full_weeks = [w for w in full_weeks if w >= first_week]
+    per_week = statistics.median([weekly.get(w, 0.0) for w in full_weeks]) if len(full_weeks) >= 3 else None
+    left = bought - spent
+    facts["credits"] = {
+        "bought": bought, "since": since, "spent": round(spent, 2), "left": round(left, 2),
+        "per_week": None if per_week is None else round(per_week, 3),
+        "days_left": None if not per_week else max(0, left) / (per_week / 7),
+    }
+    return facts
+
+
+def gather(today, paths=None, settings=None):
     """Everything the digest says, counted from the pipeline's files."""
     p = {"risk": RISK_PATH, "recalls": RECALLS_PATH, "weekly": WEEKLY_PATH,
          "history": HISTORY_PATH, "links": LINKS_PATH, "tag_review": TAG_REVIEW_PATH,
@@ -128,7 +193,8 @@ def gather(today, paths=None):
         FROM h, bounds
     """, [since, since]).fetchone()
 
-    runs = [r for r in _read_csv(p["run_log"]) if r.get("run_at_utc", "")[:10] >= since.isoformat()]
+    all_runs = _read_csv(p["run_log"])
+    runs = [r for r in all_runs if r.get("run_at_utc", "")[:10] >= since.isoformat()]
     tag_review = _read_csv(p["tag_review"])
     # Only this week's recalls. The full backlog stays in extract_review.csv on the data branch.
     extract_review = [r for r in _read_csv(p["extract_review"])
@@ -148,6 +214,7 @@ def gather(today, paths=None):
         "tag_review": tag_review,
         "tag_review_recalls": int(sum(_number(r.get("recalls")) for r in tag_review)),
         "extract_review": extract_review,
+        **upkeep(all_runs, today, upkeep_settings() if settings is None else settings),
     }
 
 
@@ -219,7 +286,62 @@ def compose(facts):
               + (f", with {_s(facts['warnings'], 'data check warning')}." if facts["warnings"]
                  else ", and every data check passed."))
     sections.append(("Data behind this digest", [health], None))
+    sections.append(("Keeping it running", keeping_it_running(facts), None))
     return subject, sections
+
+
+def _how_long(days):
+    if days >= 365:
+        return "more than a year"
+    if days >= 60:
+        return f"about {round(days / 30)} months"
+    return f"about {round(days)} days"
+
+
+def keeping_it_running(facts):
+    """The maintainer's lines: credits, the API key, and anything stuck waiting for Claude."""
+    lines = []
+    waiting = facts.get("waiting", 0)
+    if waiting:
+        lines.append(f"{_s(waiting, 'recall is', 'recalls are')} waiting for Claude for a root "
+                     "cause or drug name. If that number keeps growing, check the API key and "
+                     "the credits.")
+    else:
+        lines.append("No recalls are waiting for Claude.")
+
+    c = facts.get("credits")
+    if c:
+        since = c["since"]
+        line = (f"Claude credits: about ${c['left']:.2f} left of the ${c['bought']:.2f} bought on "
+                f"{since:%b} {since.day}, {since.year}, counting the pipeline's own calls.")
+        if c["per_week"] is None:
+            line += " There isn't enough history yet to say how long that lasts."
+        elif not c["per_week"]:
+            line += " At the current pace, it isn't being used up."
+        else:
+            line += (f" At the usual pace of about ${c['per_week']:.2f} a week, that lasts "
+                     f"{_how_long(c['days_left'])}.")
+        if c["left"] < 1:
+            line += " Top up soon."
+        lines.append(line + " The Console shows the exact balance.")
+
+    days = facts.get("key_days")
+    if days is not None:
+        expires = facts["key_expires"]
+        when = f"{expires:%b} {expires.day}, {expires.year}"
+        if days < 0:
+            lines.append(f"The Claude API key expired on {when}. Make a new one and update the "
+                         "two ANTHROPIC_API_KEY secrets.")
+        else:
+            line = f"The Claude API key expires on {when}, in {_s(days, 'day')}."
+            if days <= 30:
+                line += " Make a new one soon and update the two ANTHROPIC_API_KEY secrets."
+            lines.append(line)
+
+    lines.append("If one of these Monday emails doesn't arrive, GitHub may have paused the "
+                 "schedule. Open Actions and click Enable workflow on Daily pipeline and "
+                 "Weekly digest.")
+    return lines
 
 
 def to_text(subject, sections):

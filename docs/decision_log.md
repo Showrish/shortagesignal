@@ -245,3 +245,9 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** a Monday workflow that builds the digest and an Excel list of items that need a look (flagged recalls, recalls of drugs already in shortage, unsure root-cause tags, drug names Claude suggested that weren't used). Every sentence is filled in from counts, with no AI writing it. It's emailed over SMTP when the secrets exist, and always shown on the run page and kept as an artifact.
 - **Why:** a digest people act on has to be checkable, so every number traces back to a table. Making the email optional means the workflow never fails for lack of an account, and no password lives in the code.
 - **Passed on:** having Claude write the summary, and an email service that needs its own account and domain
+
+## 2026-10-18: the digest watches what keeps the pipeline running
+- **Chose:** a last digest section with the recalls waiting for Claude, an estimate of the Claude credits left and how long they'll last, and a countdown to the API key's expiry. Credits left is the amount bought minus the Claude cost every run logged since, and how long they last uses the median weekly spend over the last 4 full weeks, once there are at least 3.
+- **Why:** when the key expires or the credits run out, Claude's calls fail without stopping the run, so new recalls would quietly go untagged. Anthropic has no API that reports the balance for individual accounts, so the pipeline estimates it from its own logs. A weekly median keeps one-off backfills from making the credits look nearly gone.
+- **Passed on:** a daily average, which a backfill week skews, and a daily median, which reads as zero because recalls arrive weekly
+- **Limit:** calls made outside the pipeline, like local eval runs, aren't counted, so the Console stays the exact source
