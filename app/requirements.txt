@@ -1,0 +1,5 @@
+# The dashboard's own dependencies, used by Streamlit Community Cloud. It doesn't need the
+# pipeline package: it reads the pipeline's output files from the data branch.
+streamlit>=1.40
+duckdb>=1.1
+requests>=2.31
