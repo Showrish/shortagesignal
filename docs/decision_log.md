@@ -251,3 +251,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Why:** when the key expires or the credits run out, Claude's calls fail without stopping the run, so new recalls would quietly go untagged. Anthropic has no API that reports the balance for individual accounts, so the pipeline estimates it from its own logs. A weekly median keeps one-off backfills from making the credits look nearly gone.
 - **Passed on:** a daily average, which a backfill week skews, and a daily median, which reads as zero because recalls arrive weekly
 - **Limit:** calls made outside the pipeline, like local eval runs, aren't counted, so the Console stays the exact source
+
+## 2026-10-18: without an email account, the digest goes out as a GitHub issue
+- **Chose:** when the DIGEST_SMTP secrets aren't set, the weekly workflow posts the digest as an issue labeled digest, using the workflow's own token, and closes last week's. GitHub emails the repo owner about new issues, so the digest still arrives by email.
+- **Why:** Google blocked app passwords on the account. An issue needs no password, so nothing can expire or leak, and every digest stays on record in the repo.
+- **Passed on:** a third-party email service, which needs its own account and API key

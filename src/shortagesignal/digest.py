@@ -9,7 +9,9 @@ run, on the data branch's files. The email only goes out when these settings exi
   DIGEST_SMTP_USER, DIGEST_SMTP_PASSWORD   the sending account (for Gmail, an app password)
   DIGEST_TO                                where to send it (defaults to DIGEST_SMTP_USER)
   DIGEST_SMTP_HOST, DIGEST_SMTP_PORT       default smtp.gmail.com and 587
-Without them, the digest still shows on the run page and both files are saved as artifacts.
+Without them, the weekly workflow posts the digest as a GitHub issue instead, which GitHub
+emails to the repo's owner. Either way it shows on the run page, and both files are kept as
+artifacts.
 
 The "Keeping it running" section at the end uses three optional settings (GitHub repository
 variables, not secrets):
@@ -277,8 +279,8 @@ def compose(facts):
     sections.append(("Needs a look", [
         f"{_s(len(facts['tag_review']), 'unsure root-cause tag')} covering "
         f"{_s(facts['tag_review_recalls'], 'recall')} in total, and {_s(extract, 'drug name')} "
-        "Claude suggested for this week's recalls that weren't used. Both lists are in the "
-        "attached Excel file."], None))
+        "Claude suggested for this week's recalls that weren't used. Both lists are in this "
+        "week's Excel file."], None))
 
     # Only what a reader needs to trust this week's numbers. Costs and other developer
     # details stay on the run page and in run_log.csv.

@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read   # it only reads the data branch
+  issues: write    # to post the digest as an issue, which GitHub emails to you
 
 concurrency:
   group: daily-pipeline   # waits for a daily run that's still going
@@ -50,3 +51,20 @@ jobs:
           name: weekly-digest-${{ github.run_number }}
           path: digest/
           retention-days: 90
+
+      # Without an email account, the digest goes out as an issue instead. GitHub emails
+      # you about new issues in your own repo, so it still lands in your inbox. Last
+      # week's digest issue gets closed, so only the latest one stays open.
+      - name: Post the digest as an issue
+        if: env.DIGEST_SMTP_USER == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create digest --color 0E8A16 --description "Weekly digest" 2>/dev/null || true
+          for n in $(gh issue list --label digest --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "A newer digest is out."
+          done
+          echo "" >> digest/digest.md
+          echo "The Excel list of items that need a look is in the files of [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)." >> digest/digest.md
+          gh issue create --title "$(head -n 1 digest/digest.md | sed 's/^# //')" \
+            --body-file digest/digest.md --label digest
