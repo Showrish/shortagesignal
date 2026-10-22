@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "shortagesignal"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "97d9737c-e337-4e77-a056-7b5bea3407f5"
+  }
+}

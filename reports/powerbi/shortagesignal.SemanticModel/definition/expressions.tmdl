@@ -1,0 +1,10 @@
+expression DataFile =
+		(name as text) as table =>
+		    Parquet.Document(Binary.Buffer(Web.Contents(
+		        "https://raw.githubusercontent.com/Showrish/shortagesignal/data/" & name)))
+	lineageTag: c58c8701-6404-4910-9b6e-b5735b8272a7
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Function
+

@@ -1,0 +1,56 @@
+table links
+	lineageTag: 83a7dc1d-8446-4896-847c-f22275e4158d
+
+	column recall_number
+		dataType: string
+		lineageTag: 24b9e63c-366c-4321-96dc-8a5aa8b7ff38
+		summarizeBy: none
+		sourceColumn: recall_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column shortage_key
+		dataType: string
+		lineageTag: 15a7a05f-f3e4-4640-8cd9-91a692dfc1ac
+		summarizeBy: none
+		sourceColumn: shortage_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column match_level
+		dataType: string
+		lineageTag: 67dd7147-6ea1-4365-b5c0-2bc43b69d7c5
+		summarizeBy: none
+		sourceColumn: match_level
+
+		annotation SummarizationSetBy = Automatic
+
+	column shortage_generic_name
+		dataType: string
+		lineageTag: 2d17e5fa-f8c6-4cc1-b188-69b4fede66e3
+		summarizeBy: none
+		sourceColumn: shortage_generic_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column shortage_status
+		dataType: string
+		lineageTag: e6cf001e-461f-4207-a956-715ef1f30eef
+		summarizeBy: none
+		sourceColumn: shortage_status
+
+		annotation SummarizationSetBy = Automatic
+
+	partition links = m
+		mode: import
+		source =
+				let
+				    Source = DataFile("recall_shortage_links.parquet"),
+				    Kept = Table.SelectColumns(Source, {"recall_number", "shortage_key", "match_level", "shortage_generic_name", "shortage_status"})
+				in
+				    Kept
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
