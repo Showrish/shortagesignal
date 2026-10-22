@@ -95,6 +95,12 @@ python -m shortagesignal.digest
 ```
 Every Monday, `.github/workflows/weekly.yml` builds a plain-English digest of the week from the pipeline's tables: how many recalls FDA reported against the normal range, the recalls flagged high or watch, recalls of drugs already in shortage, changes to FDA's shortage list, and pipeline health. It comes with an Excel list of items that need a look. The digest shows on the run page and both files are kept as run artifacts. It's also emailed when the `DIGEST_SMTP_USER` and `DIGEST_SMTP_PASSWORD` secrets are set, for Gmail with an app password. Without them, it's posted as a GitHub issue instead, which GitHub emails to you, and last week's digest issue gets closed. A last section, Keeping it running, estimates the Claude credits left and how long they'll last, counts down to the API key's expiry, and warns when recalls are waiting for Claude.
 
+## Ask the data (Day 13)
+```
+python -m shortagesignal.ask eval
+```
+The dashboard's **Ask the data** tab answers questions in plain English. Claude Haiku writes one SQL query through a tool, the app runs it, and a second short call answers from the result rows. The query is shown under every answer. The tables are copied into an in-memory database that's then locked, so a query can't read files, reach the internet or change a setting, and only a single SELECT gets through, at most 200 rows. The tab is behind a passcode, capped at 50 questions a day, and uses its own API key in a Console workspace with a monthly spend limit. `ask eval` scores Claude's SQL on test questions whose right answers are worked out from today's data.
+
 ## Automation (Day 3)
 GitHub Actions runs the pipeline every day at 12:00 UTC. To run it by hand: Actions tab, then **Daily pipeline**, then **Run workflow**.
 - **Data:** lives on the `data` branch, which always holds the latest files in one commit
