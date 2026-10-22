@@ -10,8 +10,14 @@ Run it locally:
   streamlit run app/streamlit_app.py
 Add SHORTAGESIGNAL_DATA=local in front of the second command to read the data/ folder
 instead of GitHub.
+
+The "Ask the data" tab needs two secrets, set under the app's Settings, then Secrets on
+Streamlit Community Cloud: ANTHROPIC_API_KEY (its own key, in a Console workspace with a
+monthly spend limit) and ASK_PASSCODE. Locally it falls back to environment variables.
 """
+import hmac
 import os
+import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,10 +29,14 @@ import pandas as pd
 import requests
 import streamlit as st
 
+# The chatbot's logic lives in the pipeline's package, which only needs duckdb and anthropic.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from shortagesignal import ask  # noqa: E402
+
 REPO = "Showrish/shortagesignal"
 REPO_URL = f"https://github.com/{REPO}"
 GITHUB_PROFILE = "https://github.com/Showrish"
-LINKEDIN_URL = "https://www.linkedin.com/in/showrish-reddy-sampath-b508a22a6"  
+LINKEDIN_URL = "https://www.linkedin.com/in/showrish-reddy-sampath-b508a22a6"
 BOSTON = ZoneInfo("America/New_York")
 DATA_URL = f"https://raw.githubusercontent.com/{REPO}/data/"
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +51,15 @@ VIEWS = {   # table name in the SQL -> file on the data branch
 # One palette for every chart
 BLUE, GRAY, RED, ORANGE = "#2E6FD8", "#8C8C8C", "#D64545", "#E8913A"
 FLAG_LABELS = {"high": "🔴 High", "watch": "🟠 Watch", "low": "⚪ Low"}
+DAILY_QUESTIONS = 50
+EXAMPLES = [
+    "Which root causes had the most recall events in 2025?",
+    "Which firms had the most high-risk recalls in the last year?",
+    "How many recall numbers per year mention heparin as the drug?",
+    "Which drugs on the current shortage list were recalled in the last 90 days?",
+    "How many companies make the drugs with the most sterility recalls?",
+    "Which shortage listings have dropped off FDA's list since tracking started?",
+]
 
 st.set_page_config(page_title="ShortageSignal", page_icon="💊", layout="wide")
 
@@ -72,6 +91,30 @@ def sql_file(name):
 
 def nice_date(value):
     return f"{value:%b} {value.day}, {value.year}"
+
+
+def secret(name):
+    """A Streamlit secret, or the environment variable of the same name when running locally."""
+    try:
+        return st.secrets[name]
+    except Exception:
+        return os.getenv(name)
+
+
+@st.cache_resource(ttl=3600)
+def sandbox():
+    """The locked, read-only copy of the tables that the chatbot's queries run against."""
+    return ask.build_sandbox({
+        "recalls": fetch("recalls.parquet"), "root_causes": fetch("recall_root_causes.parquet"),
+        "risk": fetch("recall_risk.parquet"), "shortages": fetch("shortages_current.parquet"),
+        "links": fetch("recall_shortage_links.parquet"), "weekly": fetch("weekly_recalls.parquet"),
+        "makers": fetch("drug_makers.parquet"), "history": fetch("shortage_history.parquet")})
+
+
+@st.cache_resource
+def question_counter():
+    """Questions asked today, shared by everyone using the app."""
+    return {"day": None, "count": 0}
 
 
 try:
@@ -114,8 +157,8 @@ c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}",
 d.metric("Shortages FDA lists today", f"{current:,}",
          help="Current listings on FDA's drug shortage list.")
 
-flags, weekly, follows, about = st.tabs(
-    ["Risk flags", "Weekly recalls", "What follows a recall", "About"])
+flags, weekly, follows, asking, about = st.tabs(
+    ["Risk flags", "Weekly recalls", "What follows a recall", "Ask the data", "About"])
 
 # ---------------------------------------------------------------- risk flags
 
@@ -244,6 +287,69 @@ with follows:
             "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
             "since October 11, 2026, so every new shortage is kept from here on.")
 
+# ---------------------------------------------------------------- ask the data
+
+with asking:
+    passcode, api_key = (str(v) if v else None for v in (secret("ASK_PASSCODE"), secret("ANTHROPIC_API_KEY")))
+    st.markdown("Ask a question in plain English. Claude writes one read-only SQL query over "
+                "the pipeline's tables, the app runs it, and Claude answers from the results. "
+                "The query is shown under every answer, so you can check it.")
+    if not passcode or not api_key:
+        st.info("Ask the data isn't switched on here yet.")
+    elif not st.session_state.get("ask_ok"):
+        entered = st.text_input("Passcode", type="password",
+                                help="This tab uses paid AI calls, so it's behind a passcode.")
+        if entered:
+            if hmac.compare_digest(entered.encode(), passcode.encode()):
+                st.session_state["ask_ok"] = True
+                st.rerun()
+            else:
+                st.error("That passcode isn't right.")
+    else:
+        counter = question_counter()
+        if counter["day"] != today:
+            counter.update(day=today, count=0)
+        st.caption("Try one: " + " · ".join(EXAMPLES))
+        question = st.text_input("Your question", placeholder=EXAMPLES[0], max_chars=300)
+        left = DAILY_QUESTIONS - counter["count"]
+        if st.button("Ask", type="primary", disabled=not question.strip()):
+            if left <= 0:
+                st.warning("Today's questions are used up. Try again tomorrow.")
+            else:
+                import anthropic
+
+                counter["count"] += 1
+                left -= 1
+                client = anthropic.Anthropic(api_key=api_key, max_retries=2)
+                with st.spinner("Writing the query..."):
+                    plan = ask.write_sql(client, question)
+                if plan is None:
+                    st.error("Couldn't reach Claude just now. Try again in a minute.")
+                elif not plan["sql"]:
+                    st.info(f"The tables can't answer that one. {plan['explanation']}")
+                else:
+                    try:
+                        columns, rows = ask.run_query(sandbox(), plan["sql"])
+                    except ValueError as exc:
+                        st.warning(f"The query was blocked, because {exc}.")
+                        rows = None
+                    except Exception as exc:
+                        st.warning(f"The query didn't run: {str(exc)[:200]}")
+                        rows = None
+                    if rows is not None:
+                        with st.spinner("Reading the results..."):
+                            reply = ask.write_answer(client, question, plan["explanation"], columns, rows)
+                        if reply:
+                            st.markdown(f"**{reply['text']}**")
+                        st.dataframe(pd.DataFrame(rows, columns=columns), hide_index=True)
+                        spent = ask.cost([plan["tokens"]] + ([reply["tokens"]] if reply else []))
+                        with st.expander("The SQL behind this answer"):
+                            st.caption(plan["explanation"])
+                            st.code(plan["sql"], language="sql")
+                        st.caption(f"This answer cost about ${spent:.4f}.")
+        st.caption(f"{max(left, 0)} of {DAILY_QUESTIONS} questions left today. Queries can only "
+                   "read the tables, and return at most 200 rows.")
+
 # ---------------------------------------------------------------- about
 
 with about:
@@ -260,7 +366,8 @@ with about:
 6. Runs 16 data quality checks, and saves nothing if one fails.
 
 Every Monday, a digest of the week goes out by email, with an Excel list of items that need a
-look.
+look. The **Ask the data** tab answers questions in plain English with SQL that Claude writes,
+over a locked, read-only copy of the tables.
 
 **Data:** [openFDA](https://open.fda.gov/) drug enforcement reports, drug shortages and the NDC
 directory. Everything is public, and nothing here is medical advice.
@@ -271,5 +378,7 @@ directory. Everything is public, and nothing here is medical advice.
 st.divider()
 links = [f"[GitHub]({GITHUB_PROFILE})", f"[Project code and docs]({REPO_URL})"]
 if LINKEDIN_URL:
-    links.insert(0, f"[LinkedIn]({LINKEDIN_URL})")
+    # A link without https:// would open as a page inside the app, so add it if it's missing.
+    linkedin = LINKEDIN_URL if LINKEDIN_URL.startswith("http") else "https://" + LINKEDIN_URL
+    links.insert(0, f"[LinkedIn]({linkedin})")
 st.caption("Built by Showrish Reddy Sampath · " + " · ".join(links))

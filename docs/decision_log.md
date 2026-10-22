@@ -256,3 +256,14 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** when the DIGEST_SMTP secrets aren't set, the weekly workflow posts the digest as an issue labeled digest, using the workflow's own token, and closes last week's. GitHub emails the repo owner about new issues, so the digest still arrives by email.
 - **Why:** Google blocked app passwords on the account. An issue needs no password, so nothing can expire or leak, and every digest stays on record in the repo.
 - **Passed on:** a third-party email service, which needs its own account and API key
+
+## 2026-10-22: Ask the data, with SQL Claude writes over a locked copy of the tables
+- **Chose:** a dashboard tab where Claude Haiku turns a question into one SQL query through a tool, the app runs it on an in-memory copy of six friendly tables (recalls, shortages, links, weekly_recalls, drug_makers, shortage_history), and a second call answers from the rows. The database is locked after loading (no file or network access, no settings changes), a check lets only one SELECT through, and results stop at 200 rows. The tab needs a passcode, allows 50 questions a day, and uses its own key in a workspace with a monthly spend limit.
+- **Why:** questions about recalls are easier to ask than to click through, and showing the SQL keeps every answer checkable. The lock and the spend limit mean a public app can't leak files or drain the pipeline's credits.
+- **Eval:** each test question has reference SQL that's run on today's data for the right answer, and an answer counts when every reference value shows up in Claude's result. One question can't be answered from the tables, and the right move there is to decline.
+- **Passed on:** letting Claude query the raw pipeline files, and a fixed answer key that would go stale as the data changes
+
+## 2026-10-22: scoring the chatbot fairly, and cleaning the category column
+- **Chose:** questions with one answer count as right when Claude's top row holds an accepted answer, and the reference lists every tie. List questions still need every value to show up. One ambiguous test question now says the recall started in 2020 or later, and Claude is told to use the start date for when recalls happened. Therapeutic categories are cleaned from FDA's list format, like ["Anesthesia"], into plain text, and Claude is told how to count listings that have several.
+- **Why:** the first run scored 11 of 16, but two of the misses were right answers the scorer rejected, because Claude returned a ranked list with the answer on top. One miss was a tie, one came from my ambiguous question, and one was a real data problem nobody would type around. The fixes were checked against what a fair grader would accept, not against Claude's answers.
+- **Passed on:** forcing Claude to return only one row, which would make the dashboard's answers less useful
