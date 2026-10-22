@@ -16,3 +16,7 @@ data/check_log.csv
 data/
 digest/
 .streamlit/secrets.toml
+
+# Power BI local files
+**/.pbi/localSettings.json
+**/.pbi/cache.abf

@@ -1,0 +1,242 @@
+cultureInfo en-US
+
+	linguisticMetadata =
+			{
+			  "Version": "2.0.0",
+			  "Language": "en-US",
+			  "Entities": {
+			    "recall_risk.recall_events": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "Recall events"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Recall events": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.high_flags": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "High flags"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "High flags": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.linked_recalls": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "Linked recalls"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Linked to a shortage": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.root_cause": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "root_cause"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Root cause": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.recalls": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "Recalls"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Recalls since 2012": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.reported": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "reported"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Reported": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.flag": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "flag"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Flag": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.points": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "points"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Points": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.drug_key": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "drug_key"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Drug": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recall_risk.reasons": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recall_risk",
+			          "ConceptualProperty": "reasons"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Why flagged": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "recalls.recalling_firm": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "recalls",
+			          "ConceptualProperty": "recalling_firm"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Firm": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    }
+			  }
+			}
+		contentType: json
+

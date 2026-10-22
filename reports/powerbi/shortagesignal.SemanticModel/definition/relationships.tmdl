@@ -1,0 +1,20 @@
+relationship fb01d87c-f009-4c2e-be1e-f8ce57167c69
+	joinOnDateBehavior: datePartOnly
+	fromColumn: recall_risk.reported
+	toColumn: LocalDateTable_521fe30f-d26a-40eb-9621-ab7c273ecb68.Date
+
+relationship 83f16a68-98b3-447b-88f4-5f75abeeb2de
+	joinOnDateBehavior: datePartOnly
+	fromColumn: weekly_recalls.week
+	toColumn: LocalDateTable_c7637732-d2fc-4169-ae8d-6ed3393e9fa9.Date
+
+relationship AutoDetected_bdda5e07-c747-49d1-ace5-4a1a58c5a374
+	crossFilteringBehavior: bothDirections
+	fromCardinality: one
+	fromColumn: recalls.recall_number
+	toColumn: recall_risk.recall_number
+
+relationship AutoDetected_50f0f7d1-97fc-4a72-ae7a-0c2f3e565eb6
+	fromColumn: links.recall_number
+	toColumn: recall_risk.recall_number
+

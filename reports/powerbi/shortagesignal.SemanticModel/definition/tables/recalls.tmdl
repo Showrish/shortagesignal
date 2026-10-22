@@ -1,0 +1,48 @@
+table recalls
+	lineageTag: d72fc555-77dd-4df5-842a-d0f1c7c5bfe9
+
+	column recall_number
+		dataType: string
+		lineageTag: 4b44aaea-7512-43a7-81d6-f0454c4385f0
+		summarizeBy: none
+		sourceColumn: recall_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column recalling_firm
+		dataType: string
+		lineageTag: 3dbdd13a-9c17-4c08-9d7a-a467f0d708b3
+		summarizeBy: none
+		sourceColumn: recalling_firm
+
+		annotation SummarizationSetBy = Automatic
+
+	column product_description
+		dataType: string
+		lineageTag: fd0ce6d4-7f40-40fd-94b3-dc3689b56bf0
+		summarizeBy: none
+		sourceColumn: product_description
+
+		annotation SummarizationSetBy = Automatic
+
+	column reason_for_recall
+		dataType: string
+		lineageTag: c7d3c4ad-1f69-42ce-a4ab-db6664b4396a
+		summarizeBy: none
+		sourceColumn: reason_for_recall
+
+		annotation SummarizationSetBy = Automatic
+
+	partition recalls = m
+		mode: import
+		source =
+				let
+				    Source = DataFile("recalls.parquet"),
+				    Kept = Table.SelectColumns(Source, {"recall_number", "recalling_firm", "product_description", "reason_for_recall"})
+				in
+				    Kept
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

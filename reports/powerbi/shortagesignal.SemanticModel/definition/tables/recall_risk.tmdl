@@ -1,0 +1,160 @@
+table recall_risk
+	lineageTag: 1beedf05-1e33-4d04-9e7d-02a10d84e7d6
+
+	measure 'Bar color' = IF(SELECTEDVALUE(recall_risk[root_cause]) = "Sterility", "#D64545", "#8C8C8C")
+		lineageTag: d0d2a15a-63dc-4e26-b471-c9d94eb9b1a7
+
+	measure 'Flag color' = SWITCH(SELECTEDVALUE(recall_risk[flag]), "high", "#FDE2E2", "watch", "#FEF0C7", "#FFFFFF")
+		lineageTag: fe4e48cc-320f-4751-b43e-60c664db206c
+
+	measure Recalls = COUNTROWS(recall_risk)
+		formatString: #,0
+		lineageTag: 12f7596b-c0e7-4999-b521-c1951a3fc2d4
+
+	measure 'Recall events' = DISTINCTCOUNT(recall_risk[event_id])
+		formatString: #,0
+		lineageTag: 428423b8-4156-4362-8d68-451b100d3ead
+
+	measure 'High flags' = CALCULATE([Recalls], recall_risk[flag] = "high")
+		formatString: #,0
+		lineageTag: 8e75b8f8-b86f-4285-8bdc-81d9e78c0fbd
+
+	measure 'Watch flags' = CALCULATE([Recalls], recall_risk[flag] = "watch")
+		formatString: #,0
+		lineageTag: 41804115-dfc0-461e-936d-ee2b9544c55d
+
+	measure 'Linked recalls' = DISTINCTCOUNT(links[recall_number])
+		formatString: #,0
+		lineageTag: 69937260-9283-4fb7-91e5-9b2ff1f0b5ef
+
+	column in_last_90_days = recall_risk[reported] >= TODAY() - 90
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: d45eef54-642f-4ffa-b17c-44a5cd3f3450
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column recall_number
+		dataType: string
+		lineageTag: d06ba36a-c636-4a44-a134-af0fda4c5f0b
+		summarizeBy: none
+		sourceColumn: recall_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column event_id
+		dataType: string
+		lineageTag: 0c350aab-c836-4cbf-8d21-63aabffce151
+		summarizeBy: none
+		sourceColumn: event_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_date
+		dataType: string
+		lineageTag: 1fbd39ed-d47b-4f53-944f-c0325cb9d7d3
+		summarizeBy: none
+		sourceColumn: report_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column recall_class
+		dataType: string
+		lineageTag: 0bdabb69-1f94-4c10-87f9-c1bef049c846
+		summarizeBy: none
+		sourceColumn: recall_class
+
+		annotation SummarizationSetBy = Automatic
+
+	column root_cause
+		dataType: string
+		lineageTag: 68cd4303-56f0-4fb2-b180-2c6489bfc415
+		summarizeBy: none
+		sourceColumn: root_cause
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_key
+		dataType: string
+		lineageTag: 0e1bd28d-1482-45aa-89e7-dd0e4bbe1e5b
+		summarizeBy: none
+		sourceColumn: drug_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column labelers
+		dataType: int64
+		formatString: 0
+		lineageTag: 6ed3a0c5-c62b-42b8-80b6-c56b2d60bc2a
+		summarizeBy: sum
+		sourceColumn: labelers
+
+		annotation SummarizationSetBy = Automatic
+
+	column injectable
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: a21cfa6f-5e9f-4bb0-b444-6a6049b94986
+		summarizeBy: none
+		sourceColumn: injectable
+
+		annotation SummarizationSetBy = Automatic
+
+	column points
+		dataType: int64
+		formatString: 0
+		lineageTag: 4abf9f6f-5b06-4f93-b1f7-8a6841aee241
+		summarizeBy: sum
+		sourceColumn: points
+
+		annotation SummarizationSetBy = Automatic
+
+	column flag
+		dataType: string
+		lineageTag: f705b4ad-6174-438d-9e58-51bbadb04ea3
+		summarizeBy: none
+		sourceColumn: flag
+
+		annotation SummarizationSetBy = Automatic
+
+	column reasons
+		dataType: string
+		lineageTag: b2df1ba0-4d05-4860-a4d1-552b3b50348c
+		summarizeBy: none
+		sourceColumn: reasons
+
+		annotation SummarizationSetBy = Automatic
+
+	column reported
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: f61f52a2-7abc-4089-941e-c76c46fcf307
+		summarizeBy: none
+		sourceColumn: reported
+
+		variation Variation
+			isDefault
+			relationship: fb01d87c-f009-4c2e-be1e-f8ce57167c69
+			defaultHierarchy: LocalDateTable_521fe30f-d26a-40eb-9621-ab7c273ecb68.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	partition recall_risk = m
+		mode: import
+		source =
+				let
+				    Source = DataFile("recall_risk.parquet"),
+				    Reported = Table.AddColumn(Source, "reported", each try #date(
+				        Number.From(Text.Start([report_date], 4)),
+				        Number.From(Text.Middle([report_date], 4, 2)),
+				        Number.From(Text.End([report_date], 2))) otherwise null, type date)
+				in
+				    Reported
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,111 @@
+table weekly_recalls
+	lineageTag: bb9a27f6-1080-4ef8-b954-266732b818f7
+
+	measure 'Weekly recall events' = SUM(weekly_recalls[events])
+		formatString: #,0
+		lineageTag: e53c0935-016b-4615-b99c-4e696ece4a1e
+
+	measure Average = AVERAGE(weekly_recalls[center])
+		formatString: #,0.0
+		lineageTag: 52d66855-9668-48e7-9395-1f7b1eeeb8e0
+
+	measure 'Upper limit' = AVERAGE(weekly_recalls[ucl])
+		formatString: #,0.0
+		lineageTag: 5fad5323-026a-40bf-a9d5-f13bcd0c0567
+
+	measure 'Lower limit' = AVERAGE(weekly_recalls[lcl])
+		formatString: #,0.0
+		lineageTag: d268f1a6-4cb3-4967-9d58-a9702f1933c4
+
+	column in_last_2_years = weekly_recalls[week] >= EDATE(TODAY(), -24)
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: d7631aa7-18a2-457a-91cf-c3d274457f50
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column week
+		dataType: dateTime
+		formatString: mmm d, yyyy
+		lineageTag: d2c5fe5a-e4d5-4462-ace0-b9a6483a02d8
+		summarizeBy: none
+		sourceColumn: week
+
+		variation Variation
+			isDefault
+			relationship: 83f16a68-98b3-447b-88f4-5f75abeeb2de
+			defaultHierarchy: LocalDateTable_c7637732-d2fc-4169-ae8d-6ed3393e9fa9.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column events
+		dataType: int64
+		formatString: 0
+		lineageTag: 0b487c05-3965-4e97-b795-18887ce89abd
+		summarizeBy: sum
+		sourceColumn: events
+
+		annotation SummarizationSetBy = Automatic
+
+	column recalls
+		dataType: int64
+		formatString: 0
+		lineageTag: c37b1510-6c0f-4cd2-ac4d-21428f3c486d
+		summarizeBy: sum
+		sourceColumn: recalls
+
+		annotation SummarizationSetBy = Automatic
+
+	column center
+		dataType: double
+		lineageTag: dc7df31a-89f8-403d-9cec-9b2f9f10f5a0
+		summarizeBy: sum
+		sourceColumn: center
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ucl
+		dataType: double
+		lineageTag: e084ea4d-3d51-46f1-b84a-543f15b1d298
+		summarizeBy: sum
+		sourceColumn: ucl
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column lcl
+		dataType: double
+		lineageTag: 057eedd3-8c15-45be-897b-1822146587c6
+		summarizeBy: sum
+		sourceColumn: lcl
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column signal
+		dataType: string
+		lineageTag: def3490c-fae9-4793-bc08-16aa256bb0cb
+		summarizeBy: none
+		sourceColumn: signal
+
+		annotation SummarizationSetBy = Automatic
+
+	partition weekly_recalls = m
+		mode: import
+		source =
+				let
+				    Source = DataFile("weekly_recalls.parquet")
+				in
+				    Source
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

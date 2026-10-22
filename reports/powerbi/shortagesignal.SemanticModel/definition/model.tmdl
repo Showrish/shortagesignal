@@ -1,0 +1,25 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	valueFilterBehavior: independent
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_QueryOrder = ["DataFile","recall_risk","weekly_recalls","recalls","links"]
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table recall_risk
+ref table DateTableTemplate_230ec627-45e0-4600-819b-95dbc99b23e8
+ref table LocalDateTable_521fe30f-d26a-40eb-9621-ab7c273ecb68
+ref table weekly_recalls
+ref table LocalDateTable_c7637732-d2fc-4169-ae8d-6ed3393e9fa9
+ref table recalls
+ref table links
+
+ref cultureInfo en-US
+
