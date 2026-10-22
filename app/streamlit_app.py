@@ -107,6 +107,7 @@ def sandbox():
     return ask.build_sandbox({
         "recalls": fetch("recalls.parquet"), "root_causes": fetch("recall_root_causes.parquet"),
         "risk": fetch("recall_risk.parquet"), "shortages": fetch("shortages_current.parquet"),
+        "shortage_drugs": fetch("shortage_drugs.parquet"),
         "links": fetch("recall_shortage_links.parquet"), "weekly": fetch("weekly_recalls.parquet"),
         "makers": fetch("drug_makers.parquet"), "history": fetch("shortage_history.parquet")})
 

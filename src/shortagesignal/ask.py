@@ -51,13 +51,15 @@ SANDBOX_SQL = {
         LEFT JOIN read_parquet('{root_causes}') AS c ON c.recall_number = r.recall_number
         LEFT JOIN read_parquet('{risk}') AS k ON k.recall_number = r.recall_number""",
     "shortages": """
-        SELECT shortage_key, generic_name AS drug, company_name AS company, list_type, status,
-               availability, shortage_reason,
-               NULLIF(trim(regexp_replace(therapeutic_category, '[\\[\\]"]', '', 'g')), '')
+        SELECT s.shortage_key, s.generic_name AS drug, d.drug_key, s.company_name AS company,
+               s.list_type, s.status,
+               s.availability, s.shortage_reason,
+               NULLIF(trim(regexp_replace(s.therapeutic_category, '[\\[\\]"]', '', 'g')), '')
                    AS therapeutic_category,
-               dosage_form,
-               TRY_STRPTIME(initial_posting_date, '%m/%d/%Y')::DATE AS posted
-        FROM read_parquet('{shortages}')""",
+               s.dosage_form,
+               TRY_STRPTIME(s.initial_posting_date, '%m/%d/%Y')::DATE AS posted
+        FROM read_parquet('{shortages}') AS s
+        LEFT JOIN read_parquet('{shortage_drugs}') AS d ON d.shortage_key = s.shortage_key""",
     "links": """
         SELECT recall_number, shortage_key, match_level, shortage_generic_name AS shortage_drug,
                shortage_status, shortage_list_type,
@@ -90,13 +92,16 @@ recall numbers, one per product.
   labelers (how many companies list the drug, NULL when not known), injectable (boolean)
 
 shortages: one row per listing on FDA's drug shortage list today.
-  shortage_key, drug (generic name, mixed case), company, list_type ('shortage' or
+  shortage_key, drug (FDA's name, mixed case, often with the dosage form, like 'Dopamine
+  Hydrochloride Injection'), drug_key (the same drug in the cleaned form recalls.drug uses,
+  like 'dopamine hydrochloride'), company, list_type ('shortage' or
   'discontinuation'), status ('Current', 'Resolved' or 'To Be Discontinued'), availability,
   shortage_reason, therapeutic_category (a listing can have several, joined by ', ', so to
   count by single category use unnest(string_split(therapeutic_category, ', '))), dosage_form,
   posted (DATE, when FDA first posted it)
 
-links: one row per recall and shortage listing of the same drug.
+links: one row per recall and shortage listing of the same drug, as matched by the pipeline.
+This is the way to connect recalls and shortages.
   recall_number, shortage_key, match_level ('package', 'product', 'drug_and_firm' or 'drug',
   strongest first), shortage_drug, shortage_status, shortage_list_type, shortage_posted (DATE)
 
@@ -126,8 +131,11 @@ SQL_PROMPT = "\n".join([
     "3. When a question asks how often something happened, count recall events with "
     "COUNT(DISTINCT event_id). When it asks about recall numbers or products, use COUNT(*).",
     "4. Match drug, firm and product names with ILIKE '%name%', since names vary.",
-    "5. Keep results small: aggregate, sort, and add LIMIT 20 unless the question asks for more.",
-    "6. If the tables can't answer the question, leave sql empty and say why.",
+    "5. To connect recalls and shortages, join through the links table on recall_number "
+    "and shortage_key. Never join recalls and shortages on drug names. If you must compare a "
+    "drug across them, use shortages.drug_key, which is written the same way as recalls.drug.",
+    "6. Keep results small: aggregate, sort, and add LIMIT 20 unless the question asks for more.",
+    "7. If the tables can't answer the question, leave sql empty and say why.",
 ])
 
 ANSWER_PROMPT = ("Answer the question in one or two plain sentences, using only the query "
@@ -158,8 +166,8 @@ FILE_FUNCTIONS = re.compile(r"\b(read_\w+|glob|sniff_csv|parquet_\w+|getenv|quer
 
 def build_sandbox(paths):
     """An in-memory database with the four tables, locked so queries can only read them.
-    paths maps recalls, root_causes, risk, shortages, links, weekly, makers and history to
-    file paths."""
+    paths maps recalls, root_causes, risk, shortages, shortage_drugs, links, weekly, makers
+    and history to file paths."""
     files = {name: Path(path).as_posix() for name, path in paths.items()}
     con = duckdb.connect()
     for table, sql in SANDBOX_SQL.items():
@@ -288,6 +296,13 @@ EVAL_QUESTIONS = [
      "SELECT companies FROM drug_makers WHERE drug = 'heparin sodium'", "value"),
     ("How many shortage listings have dropped off FDA's list since the daily snapshots started?",
      "SELECT COUNT(*) FROM shortage_history WHERE NOT still_listed", "value"),
+    ("Which drugs on the current shortage list had a recall that started on or after 2026-07-01?",
+     "SELECT DISTINCT r.drug FROM recalls r JOIN links l ON l.recall_number = r.recall_number "
+     "WHERE l.shortage_list_type = 'shortage' AND l.shortage_status = 'Current' "
+     "AND r.initiation_date >= DATE '2026-07-01' AND r.drug IS NOT NULL", "set"),
+    ("How many recall numbers are linked to a shortage listing that is current right now?",
+     "SELECT COUNT(DISTINCT recall_number) FROM links "
+     "WHERE shortage_list_type = 'shortage' AND shortage_status = 'Current'", "value"),
     ("What was the weather in Boston yesterday?", None, None),   # the tables can't answer this
 ]
 
@@ -311,6 +326,8 @@ def results_match(reference_rows, candidate_rows, kind="set"):
     tie). A ranked list with the right answer first counts, since that's how people read it.
     "set": every value in the reference shows up somewhere in Claude's result, and the result
     isn't so big that it would match by luck."""
+    if not reference_rows:            # the right answer is "nothing", so Claude should find nothing
+        return not candidate_rows
     if kind == "value":
         acceptable = {_norm(row[0]) for row in reference_rows}
         return bool(candidate_rows) and bool(acceptable & {_norm(v) for v in candidate_rows[0]})
@@ -323,12 +340,13 @@ def results_match(reference_rows, candidate_rows, kind="set"):
 def report_eval():
     from shortagesignal.config import (CURRENT_SHORTAGES_PATH, HISTORY_PATH, LINKS_PATH,
                                        MAKERS_PATH, RECALLS_PATH, RISK_PATH, ROOT,
-                                       ROOT_CAUSES_PATH, WEEKLY_PATH)
+                                       ROOT_CAUSES_PATH, SHORTAGE_DRUGS_PATH, WEEKLY_PATH)
     from shortagesignal.tagging import make_client
 
     paths = {"recalls": RECALLS_PATH, "root_causes": ROOT_CAUSES_PATH, "risk": RISK_PATH,
-             "shortages": CURRENT_SHORTAGES_PATH, "links": LINKS_PATH, "weekly": WEEKLY_PATH,
-             "makers": MAKERS_PATH, "history": HISTORY_PATH}
+             "shortages": CURRENT_SHORTAGES_PATH, "shortage_drugs": SHORTAGE_DRUGS_PATH,
+             "links": LINKS_PATH, "weekly": WEEKLY_PATH, "makers": MAKERS_PATH,
+             "history": HISTORY_PATH}
     for path in paths.values():
         if not path.exists():
             sys.exit(f"{path} is missing. Copy the data branch in first: "

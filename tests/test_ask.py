@@ -46,7 +46,8 @@ def _parquet(con, path, columns, rows):
 def _sandbox(tmp_path):
     con = duckdb.connect()
     p = {name: tmp_path / f"{name}.parquet" for name in
-         ("recalls", "root_causes", "risk", "shortages", "links", "weekly", "makers", "history")}
+         ("recalls", "root_causes", "risk", "shortages", "shortage_drugs", "links", "weekly",
+          "makers", "history")}
     _parquet(con, p["recalls"], ["recall_number", "event_id", "report_date", "recall_initiation_date",
                                  "classification", "status", "recalling_firm", "product_description",
                                  "reason_for_recall"], [
@@ -65,6 +66,8 @@ def _sandbox(tmp_path):
                                    "dosage_form", "initial_posting_date"],
              [("k1", "Heparin Sodium", "Hospira", "shortage", "Current", "Limited", "Demand",
                '["Hematology", "Cardiology"]', "Injection", "03/15/2025")])
+    _parquet(con, p["shortage_drugs"], ["shortage_key", "drug_key", "firm_key", "generic_name"],
+             [("k1", "heparin sodium", "HOSPIRA", "Heparin Sodium")])
     _parquet(con, p["links"], ["recall_number", "shortage_key", "match_level", "shortage_generic_name",
                                "shortage_status", "shortage_list_type", "shortage_posted"],
              [("D-1", "k1", "drug_and_firm", "Heparin Sodium", "Current", "shortage", "03/15/2025")])
@@ -83,7 +86,7 @@ def test_sandbox_has_friendly_tables_and_reads_nothing_else(tmp_path):
     columns, rows = run_query(con, "SELECT drug, COUNT(*) AS n, COUNT(DISTINCT event_id) AS events "
                                    "FROM recalls GROUP BY drug ORDER BY n DESC")
     assert columns == ["drug", "n", "events"] and rows[0] == ("heparin sodium", 2, 1)
-    assert run_query(con, "SELECT posted FROM shortages")[1] == [(date(2025, 3, 15),)]
+    assert run_query(con, "SELECT posted, drug_key FROM shortages")[1] == [(date(2025, 3, 15), "heparin sodium")]
     assert run_query(con, "SELECT therapeutic_category FROM shortages")[1] == [("Hematology, Cardiology",)]
     assert run_query(con, "SELECT companies FROM drug_makers WHERE drug = 'heparin sodium'")[1] == [(6,)]
     left = run_query(con, "SELECT drug FROM shortage_history WHERE NOT still_listed")[1]
@@ -101,7 +104,7 @@ def test_results_match_sets_check_every_reference_value():
     assert results_match([(12.34,)], [(12.3,)])                         # rounded to 1 decimal
     assert not results_match([(42,)], [(41,)])
     assert not results_match([("a",)], [(str(i),) for i in range(50)] + [("a",)])   # too big
-    assert not results_match([], [(1,)])
+    assert not results_match([], [(1,)])        # the answer is nothing, but Claude found something
 
 
 def test_results_match_values_check_the_top_row_and_allow_ties():
@@ -111,6 +114,7 @@ def test_results_match_values_check_the_top_row_and_allow_ties():
     assert results_match([("2025-11-03",), ("2025-06-09",)], [("2025-06-09", 31)], "value")   # a tie
     assert results_match([(42,)], [(42,)], "value")
     assert not results_match([(42,)], [], "value")
+    assert results_match([], [], "set") and not results_match([], [("x",)], "set")   # "nothing" is right
 
 
 class FakeClient:
