@@ -1,6 +1,6 @@
 # Ask the data: eval
 
-Claude's SQL answered 16 of 16 test questions right (100%). Each reference answer is worked out from today's data, so the test never goes stale. For a question with one answer, Claude's top row has to hold it, and ties count. For a list, every value has to show up. One question can't be answered from the tables, and the right answer there is to decline.
+Claude's SQL answered 17 of 18 test questions right (94%). Each reference answer is worked out from today's data, so the test never goes stale. For a question with one answer, Claude's top row has to hold it, and ties count. For a list, every value has to show up. One question can't be answered from the tables, and the right answer there is to decline.
 
 | | Question | Note |
 |---|---|---|
@@ -19,6 +19,8 @@ Claude's SQL answered 16 of 16 test questions right (100%). Each reference answe
 | ✅ | Which therapeutic category has the most current shortage listings? |  |
 | ✅ | How many companies list heparin sodium in the NDC directory? |  |
 | ✅ | How many shortage listings have dropped off FDA's list since the daily snapshots started? |  |
+| ❌ | Which drugs on the current shortage list had a recall that started on or after 2026-07-01? | expected [['kenalog + lidocaine + povidone iodine'], ['lidocaine hydrochloride'], ['morphine sulfate']] |
+| ✅ | How many recall numbers are linked to a shortage listing that is current right now? |  |
 | ✅ | What was the weather in Boston yesterday? | declined |
 
-Model: claude-haiku-5-5. These questions cost about $0.0042.
+Model: claude-haiku-5-5. These questions cost about $0.0051.
