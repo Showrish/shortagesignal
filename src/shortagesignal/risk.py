@@ -1,17 +1,22 @@
 """
 Day 10: a risk flag on every recall, maker counts, and a control chart on weekly recalls.
 
-  python -m shortagesignal.risk backtest    how the flag does on recall events since 2020
+  python -m shortagesignal.risk backtest    how the flag does on drugs recalled since 2020
 
-The flag isn't a trained model. Only about 2% of recall events since 2020 were followed
-within a year by a shortage FDA still lists, too few for a model to learn from. Instead
-each recall gets points for the signs that the analysis and the shortage research point to:
-  2  the root cause is Sterility (about 3 times the average rate, see
-     sql/lag_by_root_cause.sql)
+The flag isn't a trained model. Only a few percent of drugs recalled since 2020 were followed
+within a year by a shortage of the same drug that FDA still lists, too few for a model to
+learn from. Instead each recall gets points for the signs that the analysis and the shortage
+research point to:
+  2  the root cause is Sterility (well above the average rate, see sql/lag_by_root_cause.sql)
   2  only 1 or 2 companies list the drug in the NDC directory, or 1 point for 3 to 5
   1  the product is an injectable (vial, syringe, infusion)
 4 points or more is high, 2 or 3 is watch, and the rest is low. The backtest reports how
 often each level was followed by a shortage, compared with the average.
+
+The backtest's unit is one drug in one recall event, the same as sql/lag_by_root_cause.sql:
+a shortage happens to a drug, so the question is whether this drug went short after this
+recall. Its lifts are also saved to audit/risk_backtest.json, which the dashboard and the
+weekly digest quote, so their numbers always match the latest backtest.
 
 Companies are counted from the NDC directory, leaving out ones that call themselves
 repackagers or relabelers. Repackagers that don't say so still count, so common drugs come
@@ -25,10 +30,12 @@ the two years before the last 13 weeks, using the moving-range method (an XmR ch
 copes better than a Poisson c-chart with weeks that vary a lot.
 """
 import csv
+import json
 import re
 import sys
 from collections import defaultdict
 from datetime import date, timedelta
+from pathlib import Path
 
 import duckdb
 
@@ -46,6 +53,7 @@ from shortagesignal.storage import load_batch, write_parquet
 
 WEEKLY_SQL = ROOT / "sql" / "weekly_recall_events.sql"
 BACKTEST_RESULTS = ROOT / "audit" / "risk_backtest.md"
+BACKTEST_JSON = ROOT / "audit" / "risk_backtest.json"
 INJECTABLE = re.compile(r"inject|syringe|infusion|intraven|ampul|\bi\.?v\.?\b", re.I)
 VIAL = re.compile(r"\bvials?\b", re.I)
 # Eye drops and the like often come in single-use vials, but they aren't injected.
@@ -224,47 +232,53 @@ def build_control_chart(recalls_path, weekly_path, workdir, today, baseline_week
 # ---------------------------------------------------------------- the backtest
 
 BACKTEST_SQL = """
-WITH events AS (
-    SELECT r.event_id,
-           MIN(TRY_STRPTIME(r.recall_initiation_date, '%Y%m%d'))::DATE AS event_date,
-           MODE(rc.root_cause) AS root_cause
-    FROM recalls AS r
-    INNER JOIN root_causes AS rc ON r.recall_number = rc.recall_number
-    GROUP BY r.event_id
+WITH units AS (
+    SELECT k.event_id, k.drug_key,
+           MIN(TRY_STRPTIME(r.recall_initiation_date, '%Y%m%d'))::DATE AS recall_date,
+           MODE(k.root_cause) AS root_cause
+    FROM recall_risk AS k
+    INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+    WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
+    GROUP BY k.event_id, k.drug_key
 ),
 followed AS (
-    SELECT DISTINCT e.event_id
-    FROM events AS e
-    INNER JOIN recalls AS r ON r.event_id = e.event_id
-    INNER JOIN links AS l ON l.recall_number = r.recall_number
+    SELECT DISTINCT u.event_id, u.drug_key
+    FROM units AS u
+    INNER JOIN recall_risk AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
+    INNER JOIN links AS l ON l.recall_number = k.recall_number
     WHERE l.shortage_list_type = 'shortage'
       AND TRY_STRPTIME(l.shortage_posted, '%m/%d/%Y')::DATE
-          BETWEEN e.event_date AND e.event_date + INTERVAL 365 DAY
+          BETWEEN u.recall_date AND u.recall_date + INTERVAL 365 DAY
 )
-SELECT e.event_id, e.root_cause, f.event_id IS NOT NULL AS was_followed,
-       r.product_description, d.drug_key
-FROM events AS e
-INNER JOIN recalls AS r ON r.event_id = e.event_id
-LEFT JOIN recall_drugs AS d ON d.recall_number = r.recall_number
-LEFT JOIN followed AS f ON f.event_id = e.event_id
-WHERE e.event_date >= DATE '2020-01-01'
+SELECT u.event_id, u.drug_key, u.root_cause, f.event_id IS NOT NULL AS was_followed,
+       r.product_description
+FROM units AS u
+INNER JOIN recall_risk AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
+INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+LEFT JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
+WHERE u.recall_date >= DATE '2020-01-01'
 """
 
 
-def score_events(rows, labelers):
-    """One score per recall event: its root cause, the fewest labelers among its drugs, and
-    whether any of its products is an injectable."""
-    events = {}
-    for event_id, root_cause, was_followed, description, key in rows:
-        e = events.setdefault(event_id, {"root_cause": root_cause, "followed": bool(was_followed),
-                                         "labelers": None, "injectable": False})
-        n = labelers.get(key) if key else None
-        if n is not None and (e["labelers"] is None or n < e["labelers"]):
-            e["labelers"] = n
-        e["injectable"] = e["injectable"] or is_injectable(description)
-    for e in events.values():
-        e["points"], e["flag"], _ = score_recall(e["root_cause"], e["labelers"], e["injectable"])
-    return list(events.values())
+def score_units(rows, labelers):
+    """One score per drug in each recall event: the root cause, how many companies make that
+    drug, and whether any of its recalled products is an injectable."""
+    units = {}
+    for event_id, key, root_cause, was_followed, description in rows:
+        u = units.setdefault((event_id, key), {"root_cause": root_cause, "followed": bool(was_followed),
+                                               "labelers": labelers.get(key), "injectable": False})
+        u["injectable"] = u["injectable"] or is_injectable(description)
+    for u in units.values():
+        u["points"], u["flag"], _ = score_recall(u["root_cause"], u["labelers"], u["injectable"])
+    return list(units.values())
+
+
+def flag_lift(path=BACKTEST_JSON):
+    """The latest backtest's numbers, or None before the first backtest."""
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def summarize(events, group):
@@ -286,39 +300,48 @@ def backtest():
             sys.exit(f"{path} is missing. Copy the data branch in first: "
                      "git fetch origin data, then git archive origin/data | tar -x -C data")
     con = connect()
-    events = score_events(con.execute(BACKTEST_SQL).fetchall(),
-                          drug_labelers(con, NDC_PATH.as_posix()))
-    if not events:
-        sys.exit("No recall events since 2020 to score.")
+    units = score_units(con.execute(BACKTEST_SQL).fetchall(), drug_labelers(con, NDC_PATH.as_posix()))
+    if not units:
+        sys.exit("No recalled drugs since 2020 to score.")
 
-    def band(e):
-        n = e["labelers"]
-        return "unknown drug" if n is None else "1 or 2" if n <= 2 else "3 to 5" if n <= 5 else "6 or more"
+    def band(u):
+        n = u["labelers"]
+        return ("not in the NDC directory" if n is None else "1 or 2" if n <= 2
+                else "3 to 5" if n <= 5 else "6 or more")
 
-    sections = [("Flag", lambda e: e["flag"], LEVELS),
-                ("Root cause is Sterility", lambda e: "yes" if e["root_cause"] == "Sterility" else "no", ["yes", "no"]),
-                ("Labelers in the NDC directory", band, ["1 or 2", "3 to 5", "6 or more", "unknown drug"]),
-                ("Injectable", lambda e: "yes" if e["injectable"] else "no", ["yes", "no"])]
-    overall = sum(e["followed"] for e in events) / len(events)
+    sections = [("Flag", lambda u: u["flag"], LEVELS),
+                ("Root cause is Sterility", lambda u: "yes" if u["root_cause"] == "Sterility" else "no", ["yes", "no"]),
+                ("Companies that make the drug", band, ["1 or 2", "3 to 5", "6 or more", "not in the NDC directory"]),
+                ("Injectable", lambda u: "yes" if u["injectable"] else "no", ["yes", "no"])]
+    followed = sum(u["followed"] for u in units)
+    overall = followed / len(units)
     lines = ["# Risk flag backtest", "",
-             f"Recall events since 2020: {len(events):,}. Followed within a year by a shortage FDA "
-             f"still lists: {sum(e['followed'] for e in events):,} ({overall:.1%}). Lift is each "
-             "group's rate divided by that average.", "",
+             f"Drugs recalled since 2020: {len(units):,}, counting each drug in each recall event "
+             f"once. Followed within a year by a shortage of the same drug that FDA still lists: "
+             f"{followed:,} ({overall:.1%}). Lift is each group's rate divided by that average.", "",
              "The Sterility points came from this same data, so these numbers are optimistic. "
              "The honest test is risk_log.csv: flags given on the day a recall was reported, "
              "checked against shortages that come later.", ""]
     for title, group, order in sections:
-        _, table = summarize(events, group)
-        lines += [f"## {title}", "", "| | Events | Followed | Rate | Lift |", "|---|---|---|---|---|"]
+        _, table = summarize(units, group)
+        lines += [f"## {title}", "", "| | Recalled drugs | Followed | Rate | Lift |", "|---|---|---|---|---|"]
         for key in order:
             if key in table:
                 n, hit, rate, lift = table[key]
                 lines.append(f"| {key} | {n:,} | {hit:,} | {rate:.1%} | {lift:.1f}x |")
         lines.append("")
+    _, by_flag = summarize(units, lambda u: u["flag"])
+    _, by_cause = summarize(units, lambda u: u["root_cause"] == "Sterility")
+    summary = {"unit": "one drug in one recall event", "since": "2020-01-01",
+               "recalled_drugs": len(units), "followed": followed, "rate": round(overall, 4),
+               "rate_by_flag": {k: round(v[2], 4) for k, v in by_flag.items()},
+               "lift": {k: round(v[3], 2) for k, v in by_flag.items()},
+               "sterility_lift": round(by_cause[True][3], 2) if True in by_cause else None}
     BACKTEST_RESULTS.parent.mkdir(parents=True, exist_ok=True)
     BACKTEST_RESULTS.write_text("\n".join(lines), encoding="utf-8")
+    BACKTEST_JSON.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print("\n".join(lines))
-    print(f"Saved {BACKTEST_RESULTS}")
+    print(f"Saved {BACKTEST_RESULTS} and {BACKTEST_JSON.name}")
 
 
 def main(argv=None):

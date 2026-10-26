@@ -16,6 +16,7 @@ Streamlit Community Cloud: ANTHROPIC_API_KEY (its own key, in a Console workspac
 monthly spend limit) and ASK_PASSCODE. Locally it falls back to environment variables.
 """
 import hmac
+import json
 import os
 import sys
 import tempfile
@@ -87,6 +88,14 @@ def connect():
 def sql_file(name):
     path = ROOT / "sql" / name
     return path.read_text().strip().rstrip(";") if path.exists() else None
+
+
+def backtest_numbers():
+    """The latest risk backtest, saved by python -m shortagesignal.risk backtest."""
+    try:
+        return json.loads((ROOT / "audit" / "risk_backtest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def nice_date(value):
@@ -203,14 +212,19 @@ with flags:
     })
     st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
                        file_name=f"shortagesignal_flags_{date.today()}.csv", mime="text/csv")
+    lift = (backtest_numbers() or {}).get("lift", {})
+    lift_sentence = ""
+    if lift.get("high") and lift.get("watch"):
+        lift_sentence = (f"On drugs recalled since 2020, high flags were followed by a shortage of the "
+                         f"same drug **{lift['high']:.1f} times** as often as average, and watch flags "
+                         f"**{lift['watch']:.1f} times**. ")
     with st.expander("How to read this"):
         st.markdown(
             "Each recall gets points for the signs that came before past shortages: **2** for a "
             "sterility problem, **2** when only 1 or 2 companies make the drug (**1** for 3 to 5), "
             "and **1** for an injectable. **4 or more is high, 2 or 3 is watch.**\n\n"
-            "On recall events since 2020, high flags were followed by a shortage about **4 times** "
-            "as often as average, and watch flags about **2 times**. Most recalls never lead to a "
-            "shortage, so this is a watch list, not a prediction.")
+            + lift_sentence +
+            "Most recalls never lead to a shortage, so this is a watch list, not a prediction.")
 
 # ---------------------------------------------------------------- control chart
 
@@ -253,37 +267,46 @@ with follows:
         st.info("sql/lag_by_root_cause.sql isn't in the repo yet.")
     else:
         lag = con.execute(lag_sql).df()
-        total, hit = int(lag["events"].sum()), int(lag["followed"].sum())
-        st.subheader(f"About {100 * hit / total:.0f}% of recall events since 2020 were followed "
-                     "within a year by a shortage FDA still lists")
-        st.markdown(f"{hit} of {total:,} events. **Sterility recalls stand out**, at about three times "
-                    "the average, usually 4 to 5 months later.")
+        total, hit = int(lag["recalled_drugs"].sum()), int(lag["followed"].sum())
+        overall = 100 * hit / total if total else 0
+        st.subheader(f"{overall:.1f}% of drugs recalled since 2020 were followed within a year by a "
+                     "shortage of the same drug that FDA still lists")
+        line = f"{hit:,} of {total:,} recalled drugs, counting each drug in each recall event once."
+        sterility = lag[lag["root_cause"] == "Sterility"]
+        if len(sterility) and overall:
+            s = sterility.iloc[0]
+            line += (f" For **Sterility** recalls it's {s['pct_followed']:.1f}%, "
+                     f"{s['pct_followed'] / overall:.1f} times the average")
+            line += f", a median of {s['median_days']:.0f} days later." if pd.notna(s["median_days"]) else "."
+        st.markdown(line)
         lag["label"] = lag["pct_followed"].map(lambda v: f"{v:.1f}%")
         base = alt.Chart(lag).encode(
             y=alt.Y("root_cause:N", sort="-x", title=None),
-            x=alt.X("pct_followed:Q", title="% of recall events followed by a shortage within a year"))
+            x=alt.X("pct_followed:Q", title="% of recalled drugs followed by a shortage within a year"))
         bars = base.mark_bar().encode(
             color=alt.condition(alt.datum.root_cause == "Sterility", alt.value(RED), alt.value(GRAY)),
             tooltip=[alt.Tooltip("root_cause:N", title="Root cause"),
-                     alt.Tooltip("events:Q", title="Recall events"),
+                     alt.Tooltip("recalled_drugs:Q", title="Recalled drugs"),
                      alt.Tooltip("followed:Q", title="Followed by a shortage"),
                      alt.Tooltip("median_days:Q", title="Median days", format=".0f")])
         st.altair_chart(bars + base.mark_text(align="left", dx=4).encode(text="label:N"))
         st.dataframe(lag.drop(columns=["label"]), hide_index=True, column_config={
             "root_cause": st.column_config.TextColumn("Root cause"),
-            "events": st.column_config.NumberColumn("Recall events", format="%d"),
+            "recalled_drugs": st.column_config.NumberColumn("Recalled drugs", format="%d"),
             "followed": st.column_config.NumberColumn("Followed by a shortage", format="%d"),
             "pct_followed": st.column_config.NumberColumn("Share", format="%.1f%%"),
             "median_days": st.column_config.NumberColumn("Median days to the shortage", format="%d"),
         })
     backtest = ROOT / "audit" / "risk_backtest.md"
     if backtest.exists():
-        with st.expander("How the risk flag did on past recall events"):
+        with st.expander("How the risk flag did on past recalls"):
             st.markdown(backtest.read_text())
     with st.expander("How to read this, and its limits"):
         st.markdown(
-            "Each recall event is followed for a year to see whether FDA posted a shortage of the "
-            "same drug. **Limits:** FDA's shortage feed mostly lists shortages that are still going "
+            "Each drug in each recall event is followed for a year to see whether FDA posted a "
+            "shortage of that same drug. A pharmacy recalling 298 products that cover 40 drugs "
+            "counts as 40 recalled drugs, not 298 and not 1. Recalls whose drug couldn't be named "
+            "are left out. **Limits:** FDA's shortage feed mostly lists shortages that are still going "
             "on, so ones that ended long ago are missing. Some links are by drug name only, so a "
             "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
             "since October 11, 2026, so every new shortage is kept from here on.")
