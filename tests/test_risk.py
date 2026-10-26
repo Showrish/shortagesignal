@@ -11,10 +11,12 @@ from shortagesignal.risk import (
     control_limits,
     drug_labelers,
     is_injectable,
-    score_events,
     score_recall,
+    score_units,
     summarize,
 )
+from shortagesignal.config import ROOT
+from shortagesignal.run_sql import read_query
 from shortagesignal.storage import load_batch, write_parquet
 
 
@@ -141,15 +143,45 @@ def test_control_chart_fills_empty_weeks_and_flags_a_spike(tmp_path):
     assert table[20][1:] == (0, "below")
 
 
-def test_score_events_uses_the_riskiest_product_in_each_event():
+def test_score_units_scores_each_drug_in_an_event_on_its_own():
     labelers = {"heparin sodium": 2, "carboplatin": 1}
-    rows = [("e1", "Sterility", True, "Heparin vial", "heparin sodium"),
-            ("e1", "Sterility", True, "Carboplatin tablets", "carboplatin"),
-            ("e2", "CGMP", False, "Aspirin tablets", None)]
-    events = score_events(rows, labelers)
-    by_cause = {e["root_cause"]: e for e in events}
-    assert (by_cause["Sterility"]["labelers"], by_cause["Sterility"]["flag"]) == (1, "high")
-    assert by_cause["CGMP"]["flag"] == "low"
-    overall, table = summarize(events, lambda e: e["flag"])
-    assert overall == 0.5
-    assert table["high"] == (1, 1, 1.0, 2.0)
+    rows = [("e1", "heparin sodium", "Sterility", True, "Heparin Sodium Injection, 10 mL vial"),
+            ("e1", "heparin sodium", "Sterility", True, "Heparin Sodium Injection, 30 mL vial"),
+            ("e1", "carboplatin", "Sterility", False, "Carboplatin tablets"),
+            ("e2", "aspirin", "CGMP", False, "Aspirin tablets")]
+    units = {(u["root_cause"], u["labelers"]): u for u in score_units(rows, labelers)}
+    assert len(units) == 3                              # two drugs in e1, one in e2
+    heparin, carboplatin, aspirin = units[("Sterility", 2)], units[("Sterility", 1)], units[("CGMP", None)]
+    assert (heparin["points"], heparin["followed"]) == (5, True)        # sterility, 2 makers, a vial
+    assert (carboplatin["points"], carboplatin["followed"]) == (4, False)
+    assert aspirin["flag"] == "low"
+    overall, table = summarize(list(units.values()), lambda u: u["flag"])
+    assert overall == pytest.approx(1 / 3)
+    assert table["high"] == (2, 1, 0.5, pytest.approx(1.5))
+
+
+def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):
+    con = duckdb.connect()
+    files = {name: tmp_path / f"{name}.parquet" for name in ("recall_risk", "recalls", "links")}
+    save(con, [
+        # one pharmacy event with two drugs, recalled under three recall numbers
+        {"recall_number": "D-1", "event_id": "e1", "drug_key": "heparin sodium", "root_cause": "Sterility"},
+        {"recall_number": "D-2", "event_id": "e1", "drug_key": "carboplatin", "root_cause": "Sterility"},
+        {"recall_number": "D-3", "event_id": "e1", "drug_key": "heparin sodium", "root_cause": "Sterility"},
+        {"recall_number": "D-4", "event_id": "e2", "drug_key": None, "root_cause": "CGMP"},   # no drug named
+        {"recall_number": "D-5", "event_id": "e3", "drug_key": "morphine", "root_cause": "CGMP"},  # too old
+    ], files["recall_risk"], tmp_path)
+    save(con, [{"recall_number": n, "recall_initiation_date": d} for n, d in
+               [("D-1", "20250101"), ("D-2", "20250101"), ("D-3", "20250101"), ("D-4", "20250101"),
+                ("D-5", "20190101")]], files["recalls"], tmp_path)
+    save(con, [{"recall_number": "D-3", "shortage_list_type": "shortage", "shortage_posted": "04/11/2025"},
+               {"recall_number": "D-5", "shortage_list_type": "shortage", "shortage_posted": "02/01/2019"}],
+         files["links"], tmp_path)
+    for name, path in files.items():
+        con.execute(f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{path.as_posix()}')")
+
+    rows = con.execute(read_query(ROOT / "sql" / "lag_by_root_cause.sql")).fetchall()
+    # Heparin went short 100 days later, carboplatin didn't: 1 of 2, not "the event was followed"
+    assert rows == [("Sterility", 2, 1, 50.0, 100.0)]
+    followed = con.execute(read_query(ROOT / "sql" / "drugs_followed.sql")).fetchall()
+    assert [(r[0], r[1], r[5]) for r in followed] == [("e1", "heparin sodium", 100)]

@@ -53,6 +53,7 @@ from shortagesignal.config import (
     TAG_REVIEW_PATH,
     WEEKLY_PATH,
 )
+from shortagesignal.risk import flag_lift
 
 DASHBOARD_URL = "https://shortagesignal.streamlit.app"
 REPO_URL = "https://github.com/Showrish/shortagesignal"
@@ -216,6 +217,7 @@ def gather(today, paths=None, settings=None):
         "tag_review": tag_review,
         "tag_review_recalls": int(sum(_number(r.get("recalls")) for r in tag_review)),
         "extract_review": extract_review,
+        "backtest": flag_lift(),
         **upkeep(all_runs, today, upkeep_settings() if settings is None else settings),
     }
 
@@ -253,8 +255,11 @@ def compose(facts):
         para = (f"{_s(facts['high'], 'recall')} flagged high and {facts['watch']:,} watch. "
                 "Points come from a sterility problem (2), a drug only 1 or 2 companies make "
                 "(2, or 1 for 3 to 5 companies) and an injectable (1). 4 or more is high, 2 or 3 "
-                "is watch. On past recalls, high flags were followed by a shortage about 4 times "
-                "as often as average.")
+                "is watch.")
+        lift = (facts.get("backtest") or {}).get("lift", {}).get("high")
+        if lift:
+            para += (f" On drugs recalled since 2020, high flags were followed by a shortage of the "
+                     f"same drug {lift:.1f} times as often as average.")
         table = (["flag", "drug", "firm", "root cause", "reasons"],
                  [[r["flag"], r["drug"] or "(not named)", r["firm"], r["root_cause"], r["reasons"]]
                   for r in facts["flagged"][:10]])
