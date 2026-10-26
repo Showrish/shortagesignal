@@ -88,7 +88,8 @@ recall numbers, one per product.
   recall_status ('Ongoing', 'Completed' or 'Terminated'), firm, product, reason,
   drug (lowercase generic name like 'heparin sodium', NULL when not known),
   root_cause (one of: {', '.join(ROOT_CAUSES)}),
-  risk_flag ('high', 'watch' or 'low'), risk_points (0 to 5), risk_reasons (text),
+  risk_flag ('high' when the drug is on FDA's shortage list now, 'watch' for an injectable,
+  otherwise 'low'), risk_points (0 to 3), risk_reasons (text),
   labelers (how many companies list the drug, NULL when not known), injectable (boolean)
 
 shortages: one row per listing on FDA's drug shortage list today.

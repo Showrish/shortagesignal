@@ -3,20 +3,27 @@ Day 10: a risk flag on every recall, maker counts, and a control chart on weekly
 
   python -m shortagesignal.risk backtest    how the flag does on drugs recalled since 2020
 
-The flag isn't a trained model. Only a few percent of drugs recalled since 2020 were followed
-within a year by a shortage of the same drug that FDA still lists, too few for a model to
-learn from. Instead each recall gets points for the signs that the analysis and the shortage
-research point to:
-  2  the root cause is Sterility (well above the average rate, see sql/lag_by_root_cause.sql)
-  2  only 1 or 2 companies list the drug in the NDC directory, or 1 point for 3 to 5
-  1  the product is an injectable (vial, syringe, infusion)
-4 points or more is high, 2 or 3 is watch, and the rest is low. The backtest reports how
-often each level was followed by a shortage, compared with the average.
+The flag isn't a trained model, and it doesn't claim to predict much. Only about 1 in 100
+drugs recalled since 2020 was followed within a year by a shortage of the same drug that FDA
+still lists, too few for a model to learn from. Each recall gets points instead:
+  2  the recalled drug is on FDA's shortage list right now (any company, any match level).
+     That's a fact, not a prediction, and the most urgent case: the recall can deepen a
+     shortage that already exists.
+  1  the product is an injectable (vial, syringe, infusion), the one sign that held up when
+     each drug in each recall event was counted on its own: about twice the rate of other
+     recalls, in both 2020-22 and 2023 on (see sql/flag_evidence.sql)
+2 points or more is high, 1 is watch, and 0 is low.
+
+Two earlier signs were dropped on 2026-10-26, and the backtest still reports them. Sterility
+added nothing once injectables were accounted for, since 80% of sterility recalls are
+injectables. Few makers pointed the wrong way: drugs only 1 or 2 companies list are mostly
+niche or compounded products, which the shortage list rarely covers.
 
 The backtest's unit is one drug in one recall event, the same as sql/lag_by_root_cause.sql:
 a shortage happens to a drug, so the question is whether this drug went short after this
-recall. Its lifts are also saved to audit/risk_backtest.json, which the dashboard and the
-weekly digest quote, so their numbers always match the latest backtest.
+recall. It tests the watch sign. High is a status, so it isn't backtested. Its numbers are
+also saved to audit/risk_backtest.json, which the dashboard and the weekly digest quote, so
+their numbers always match the latest backtest.
 
 Companies are counted from the NDC directory, leaving out ones that call themselves
 repackagers or relabelers. Repackagers that don't say so still count, so common drugs come
@@ -40,11 +47,11 @@ from pathlib import Path
 import duckdb
 
 from shortagesignal.config import (
+    LINKS_PATH,
     NDC_PATH,
-    RECALL_DRUGS_PATH,
     RECALLS_PATH,
+    RISK_PATH,
     ROOT,
-    ROOT_CAUSES_PATH,
 )
 from shortagesignal.drugs import drug_key
 from shortagesignal.firms import firm_key
@@ -60,7 +67,7 @@ VIAL = re.compile(r"\bvials?\b", re.I)
 NOT_INJECTED = re.compile(r"ophthalmic|\beyes?\b|\botic\b|\bears?\b|nasal|inhal", re.I)
 REPACKAGER = re.compile(r"repack|relabel", re.I)
 RISK_COLUMNS = ["recall_number", "event_id", "report_date", "recall_class", "root_cause",
-                "drug_key", "labelers", "injectable", "points", "flag", "reasons"]
+                "drug_key", "labelers", "injectable", "in_shortage", "points", "flag", "reasons"]
 LOG_COLUMNS = ["recall_number", "report_date", "flagged_on", "flag", "points", "reasons"]
 WEEKLY_COLUMNS = ["week", "events", "recalls", "center", "ucl", "lcl", "signal"]
 LEVELS = ["high", "watch", "low"]
@@ -76,22 +83,17 @@ def is_injectable(description):
     return bool(VIAL.search(description)) and not NOT_INJECTED.search(description)
 
 
-def score_recall(root_cause, labelers, injectable):
-    """(points, flag, reasons) for one recall. labelers is None when the drug is unknown."""
+def score_recall(in_shortage, injectable):
+    """(points, flag, reasons) for one recall: 2 when its drug is on FDA's shortage list right
+    now, 1 for an injectable. 2 or more is high, 1 is watch, 0 is low."""
     points, reasons = 0, []
-    if root_cause == "Sterility":
+    if in_shortage:
         points += 2
-        reasons.append("sterility")
-    if labelers is not None and labelers <= 2:
-        points += 2
-        reasons.append(f"{labelers} labeler" + ("" if labelers == 1 else "s"))
-    elif labelers is not None and labelers <= 5:
-        points += 1
-        reasons.append(f"{labelers} labelers")
+        reasons.append("on the shortage list now")
     if injectable:
         points += 1
         reasons.append("injectable")
-    flag = "high" if points >= 4 else "watch" if points >= 2 else "low"
+    flag = "high" if points >= 2 else "watch" if points == 1 else "low"
     return points, flag, ", ".join(reasons)
 
 
@@ -115,9 +117,16 @@ def _parse_day(text):
 
 
 def build_risk(recalls_path, root_causes_path, recall_drugs_path, ndc_path, risk_path,
-               makers_path, log_path, workdir, today):
-    """Score every recall, save the maker counts, and log the flags of newly reported recalls."""
+               makers_path, log_path, workdir, today, links_path=None):
+    """Score every recall, save the maker counts, and log the flags of newly reported recalls.
+    links_path holds the recall-to-shortage links, which say whether a drug is short now."""
     con = duckdb.connect()
+    short_now = set()
+    if links_path is not None and Path(links_path).exists():
+        short_now = {n for (n,) in con.execute(f"""
+            SELECT DISTINCT recall_number FROM read_parquet('{Path(links_path).as_posix()}')
+            WHERE shortage_list_type = 'shortage' AND lower(shortage_status) = 'current'
+        """).fetchall()}
     labelers = drug_labelers(con, ndc_path.as_posix())
     load_batch(con, [{"drug_key": k, "labelers": str(n)} for k, n in sorted(labelers.items())],
                ["drug_key", "labelers"], "makers", workdir)
@@ -135,18 +144,20 @@ def build_risk(recalls_path, root_causes_path, recall_drugs_path, ndc_path, risk
     scored = []
     for number, event_id, report_date, recall_class, description, root_cause, key in rows:
         n = labelers.get(key) if key else None
-        injectable = is_injectable(description)
-        points, flag, reasons = score_recall(root_cause, n, injectable)
+        injectable, in_shortage = is_injectable(description), number in short_now
+        points, flag, reasons = score_recall(in_shortage, injectable)
         scored.append({"recall_number": number, "event_id": event_id, "report_date": report_date,
                        "recall_class": recall_class, "root_cause": root_cause, "drug_key": key,
                        "labelers": None if n is None else str(n),
                        "injectable": "true" if injectable else "false",
+                       "in_shortage": "true" if in_shortage else "false",
                        "points": str(points), "flag": flag, "reasons": reasons})
     load_batch(con, scored, RISK_COLUMNS, "recall_risk", workdir)
     write_parquet(con, """
         SELECT recall_number, event_id, report_date, recall_class, root_cause, drug_key,
                CAST(labelers AS INTEGER) AS labelers, CAST(injectable AS BOOLEAN) AS injectable,
-               CAST(points AS INTEGER) AS points, flag, reasons
+               CAST(in_shortage AS BOOLEAN) AS in_shortage, CAST(points AS INTEGER) AS points,
+               flag, reasons
         FROM recall_risk ORDER BY recall_number
     """, risk_path)
 
@@ -261,15 +272,17 @@ WHERE u.recall_date >= DATE '2020-01-01'
 
 
 def score_units(rows, labelers):
-    """One score per drug in each recall event: the root cause, how many companies make that
-    drug, and whether any of its recalled products is an injectable."""
+    """One row per drug in each recall event, with the watch sign (any of its recalled products
+    is an injectable) and the two dropped signs, the root cause and how many companies make it.
+    High is a status at the time of the recall, which the past doesn't record, so the backtest
+    scores each unit as if it weren't short yet."""
     units = {}
     for event_id, key, root_cause, was_followed, description in rows:
         u = units.setdefault((event_id, key), {"root_cause": root_cause, "followed": bool(was_followed),
                                                "labelers": labelers.get(key), "injectable": False})
         u["injectable"] = u["injectable"] or is_injectable(description)
     for u in units.values():
-        u["points"], u["flag"], _ = score_recall(u["root_cause"], u["labelers"], u["injectable"])
+        u["points"], u["flag"], _ = score_recall(False, u["injectable"])
     return list(units.values())
 
 
@@ -295,7 +308,7 @@ def summarize(events, group):
 def backtest():
     from shortagesignal.run_sql import connect
 
-    for path in (NDC_PATH, RECALLS_PATH, ROOT_CAUSES_PATH, RECALL_DRUGS_PATH):
+    for path in (NDC_PATH, RECALLS_PATH, RISK_PATH, LINKS_PATH):
         if not path.exists():
             sys.exit(f"{path} is missing. Copy the data branch in first: "
                      "git fetch origin data, then git archive origin/data | tar -x -C data")
@@ -309,19 +322,28 @@ def backtest():
         return ("not in the NDC directory" if n is None else "1 or 2" if n <= 2
                 else "3 to 5" if n <= 5 else "6 or more")
 
-    sections = [("Flag", lambda u: u["flag"], LEVELS),
-                ("Root cause is Sterility", lambda u: "yes" if u["root_cause"] == "Sterility" else "no", ["yes", "no"]),
-                ("Companies that make the drug", band, ["1 or 2", "3 to 5", "6 or more", "not in the NDC directory"]),
-                ("Injectable", lambda u: "yes" if u["injectable"] else "no", ["yes", "no"])]
+    def cause_and_form(u):
+        return (("sterility" if u["root_cause"] == "Sterility" else "other cause") + ", "
+                + ("injectable" if u["injectable"] else "not injectable"))
+
+    combos = [f"{c}, {f}" for c in ("sterility", "other cause") for f in ("injectable", "not injectable")]
+    sections = [("Flag: watch is an injectable", lambda u: u["flag"], ["watch", "low"]),
+                ("Dropped: root cause is Sterility",
+                 lambda u: "yes" if u["root_cause"] == "Sterility" else "no", ["yes", "no"]),
+                ("Why Sterility was dropped: it adds nothing within injectables", cause_and_form, combos),
+                ("Dropped: companies that make the drug", band,
+                 ["1 or 2", "3 to 5", "6 or more", "not in the NDC directory"])]
     followed = sum(u["followed"] for u in units)
     overall = followed / len(units)
     lines = ["# Risk flag backtest", "",
              f"Drugs recalled since 2020: {len(units):,}, counting each drug in each recall event "
              f"once. Followed within a year by a shortage of the same drug that FDA still lists: "
              f"{followed:,} ({overall:.1%}). Lift is each group's rate divided by that average.", "",
-             "The Sterility points came from this same data, so these numbers are optimistic. "
-             "The honest test is risk_log.csv: flags given on the day a recall was reported, "
-             "checked against shortages that come later.", ""]
+             "High means the recalled drug is on FDA's shortage list right now. That's a status, "
+             "not a prediction, so it isn't backtested here. Watch means an injectable. The signs "
+             "were chosen by looking at this same data, so these numbers are optimistic. The "
+             "honest test is risk_log.csv: flags given on the day a recall was reported, checked "
+             "against shortages that come later.", ""]
     for title, group, order in sections:
         _, table = summarize(units, group)
         lines += [f"## {title}", "", "| | Recalled drugs | Followed | Rate | Lift |", "|---|---|---|---|---|"]

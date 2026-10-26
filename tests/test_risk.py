@@ -27,11 +27,10 @@ def save(con, rows, path, workdir):
 
 
 def test_score_recall_adds_up_the_signs():
-    assert score_recall("Sterility", 1, True) == (5, "high", "sterility, 1 labeler, injectable")
-    assert score_recall("Sterility", 2, False) == (4, "high", "sterility, 2 labelers")
-    assert score_recall("CGMP", 4, True) == (2, "watch", "4 labelers, injectable")
-    assert score_recall("Impurities", 12, True) == (1, "low", "injectable")
-    assert score_recall("CGMP", None, False) == (0, "low", "")
+    assert score_recall(True, True) == (3, "high", "on the shortage list now, injectable")
+    assert score_recall(True, False) == (2, "high", "on the shortage list now")
+    assert score_recall(False, True) == (1, "watch", "injectable")
+    assert score_recall(False, False) == (0, "low", "")
 
 
 def test_is_injectable():
@@ -69,7 +68,7 @@ def test_drug_labelers_counts_companies_without_repackagers(tmp_path):
 
 def _risk_fixture(con, tmp_path, today):
     paths = {name: tmp_path / f"{name}.parquet" for name in
-             ("recalls", "root_causes", "recall_drugs", "ndc", "risk", "makers")}
+             ("recalls", "root_causes", "recall_drugs", "ndc", "risk", "makers", "links")}
     recent, old = (today - timedelta(days=5)).strftime("%Y%m%d"), "20200101"
     save(con, [
         {"recall_number": "D-1", "event_id": "1", "report_date": recent, "classification": "Class I",
@@ -89,6 +88,12 @@ def _risk_fixture(con, tmp_path, today):
     save(con, [{"generic_name": "Heparin Sodium", "labeler_name": "Hospira, Inc."},
                {"generic_name": "Heparin Sodium", "labeler_name": "Fresenius Kabi USA, LLC"},
                {"generic_name": "Carboplatin", "labeler_name": "Teyro Labs"}], paths["ndc"], tmp_path)
+    save(con, [  # only a current shortage listing counts as short now
+        {"recall_number": "D-1", "shortage_list_type": "shortage", "shortage_status": "Resolved"},
+        {"recall_number": "D-2", "shortage_list_type": "shortage", "shortage_status": "Current"},
+        {"recall_number": "D-3", "shortage_list_type": "discontinuation",
+         "shortage_status": "To Be Discontinued"},
+    ], paths["links"], tmp_path)
     return paths
 
 
@@ -99,24 +104,25 @@ def test_build_risk_scores_every_recall_and_logs_new_ones_once(tmp_path):
     args = (p["recalls"], p["root_causes"], p["recall_drugs"], p["ndc"], p["risk"], p["makers"],
             log, tmp_path, today)
 
-    stats = build_risk(*args)
-    assert stats["recent"] == {"high": 1, "watch": 0, "low": 1}   # D-1 and D-3 are recent
+    stats = build_risk(*args, links_path=p["links"])
+    assert stats["recent"] == {"high": 0, "watch": 1, "low": 1}   # D-1 and D-3 are recent
     assert stats["all"] == {"high": 1, "watch": 1, "low": 1}
     assert stats["logged"] == 2
     flags = dict(con.execute(
         f"SELECT recall_number, flag FROM read_parquet('{p['risk'].as_posix()}')").fetchall())
-    assert flags == {"D-1": "high", "D-2": "watch", "D-3": "low"}
-    points, labelers, injectable = con.execute(
-        f"SELECT points, labelers, injectable FROM read_parquet('{p['risk'].as_posix()}') "
-        "WHERE recall_number = 'D-1'").fetchone()
-    assert (points, labelers, injectable) == (5, 2, True)
+    # D-1 is an injectable whose shortage was resolved, D-2 is short now, D-3 is neither
+    assert flags == {"D-1": "watch", "D-2": "high", "D-3": "low"}
+    points, labelers, injectable, short = con.execute(
+        f"SELECT points, labelers, injectable, in_shortage FROM read_parquet('{p['risk'].as_posix()}') "
+        "WHERE recall_number = 'D-2'").fetchone()
+    assert (points, labelers, injectable, short) == (3, 1, True, True)   # makers are still counted
 
-    again = build_risk(*args)                  # the same day again: nothing new to log
+    again = build_risk(*args, links_path=p["links"])   # the same day again: nothing new to log
     assert again["logged"] == 0
     with open(log, newline="") as f:
         rows = list(csv.DictReader(f))
     assert [(r["recall_number"], r["flag"], r["flagged_on"]) for r in rows] == [
-        ("D-1", "high", "2026-10-16"), ("D-3", "low", "2026-10-16")]
+        ("D-1", "watch", "2026-10-16"), ("D-3", "low", "2026-10-16")]
 
 
 def test_control_chart_fills_empty_weeks_and_flags_a_spike(tmp_path):
@@ -152,12 +158,13 @@ def test_score_units_scores_each_drug_in_an_event_on_its_own():
     units = {(u["root_cause"], u["labelers"]): u for u in score_units(rows, labelers)}
     assert len(units) == 3                              # two drugs in e1, one in e2
     heparin, carboplatin, aspirin = units[("Sterility", 2)], units[("Sterility", 1)], units[("CGMP", None)]
-    assert (heparin["points"], heparin["followed"]) == (5, True)        # sterility, 2 makers, a vial
-    assert (carboplatin["points"], carboplatin["followed"]) == (4, False)
+    assert (heparin["flag"], heparin["followed"]) == ("watch", True)   # an injectable
+    assert (carboplatin["flag"], carboplatin["followed"]) == ("low", False)
     assert aspirin["flag"] == "low"
     overall, table = summarize(list(units.values()), lambda u: u["flag"])
     assert overall == pytest.approx(1 / 3)
-    assert table["high"] == (2, 1, 0.5, pytest.approx(1.5))
+    assert table["watch"] == (1, 1, 1.0, pytest.approx(3.0))
+    assert table["low"] == (2, 0, 0.0, 0.0)
 
 
 def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):

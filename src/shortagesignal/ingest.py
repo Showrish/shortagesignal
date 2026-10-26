@@ -569,7 +569,8 @@ def run(data_dir, now, stats):
             # 8. Risk flags, maker counts and the weekly control chart
             k = build_risk(recalls, stage / ROOT_CAUSES_PATH.name, stage / RECALL_DRUGS_PATH.name,
                            ndc, stage / RISK_PATH.name, stage / MAKERS_PATH.name,
-                           stage / RISK_LOG_PATH.name, workdir, today)
+                           stage / RISK_LOG_PATH.name, workdir, today,
+                           links_path=stage / LINKS_PATH.name)
             w = build_control_chart(recalls, stage / WEEKLY_PATH.name, workdir, today)
             stats.update(risk_high_30d=k["recent"]["high"], risk_watch_30d=k["recent"]["watch"],
                          risk_low_30d=k["recent"]["low"], weekly_events_last=w["last_events"],
