@@ -253,13 +253,13 @@ def compose(facts):
 
     if facts["flagged"]:
         para = (f"{_s(facts['high'], 'recall')} flagged high and {facts['watch']:,} watch. "
-                "Points come from a sterility problem (2), a drug only 1 or 2 companies make "
-                "(2, or 1 for 3 to 5 companies) and an injectable (1). 4 or more is high, 2 or 3 "
-                "is watch.")
-        lift = (facts.get("backtest") or {}).get("lift", {}).get("high")
-        if lift:
-            para += (f" On drugs recalled since 2020, high flags were followed by a shortage of the "
-                     f"same drug {lift:.1f} times as often as average.")
+                "High means the recalled drug is on FDA's shortage list right now, so the recall "
+                "can make that shortage worse. Watch means an injectable.")
+        rates = (facts.get("backtest") or {}).get("rate_by_flag", {})
+        if rates.get("watch") and rates.get("low"):
+            para += (f" On drugs recalled since 2020, {rates['watch']:.1%} of injectables were "
+                     f"followed within a year by a shortage of the same drug, against "
+                     f"{rates['low']:.1%} of other recalls.")
         table = (["flag", "drug", "firm", "root cause", "reasons"],
                  [[r["flag"], r["drug"] or "(not named)", r["firm"], r["root_cause"], r["reasons"]]
                   for r in facts["flagged"][:10]])

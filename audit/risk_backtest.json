@@ -5,14 +5,12 @@
   "followed": 45,
   "rate": 0.0132,
   "rate_by_flag": {
-    "watch": 0.019,
-    "low": 0.012,
-    "high": 0.0
+    "watch": 0.0211,
+    "low": 0.0094
   },
   "lift": {
-    "watch": 1.45,
-    "low": 0.91,
-    "high": 0.0
+    "watch": 1.6,
+    "low": 0.72
   },
   "sterility_lift": 1.45
 }

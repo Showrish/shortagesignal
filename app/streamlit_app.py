@@ -200,7 +200,8 @@ with flags:
     view["reasons"] = view["reasons"].fillna("").str.capitalize()
     st.dataframe(view, hide_index=True, column_config={
         "flag": st.column_config.TextColumn("Flag"),
-        "points": st.column_config.NumberColumn("Points", help="0 to 5. 4 or more is high."),
+        "points": st.column_config.NumberColumn(
+            "Points", help="2 when the drug is on FDA's shortage list now, 1 for an injectable."),
         "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
         "recall_number": st.column_config.TextColumn("Recall"),
         "firm": st.column_config.TextColumn("Firm"),
@@ -212,19 +213,21 @@ with flags:
     })
     st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
                        file_name=f"shortagesignal_flags_{date.today()}.csv", mime="text/csv")
-    lift = (backtest_numbers() or {}).get("lift", {})
-    lift_sentence = ""
-    if lift.get("high") and lift.get("watch"):
-        lift_sentence = (f"On drugs recalled since 2020, high flags were followed by a shortage of the "
-                         f"same drug **{lift['high']:.1f} times** as often as average, and watch flags "
-                         f"**{lift['watch']:.1f} times**. ")
+    rates = (backtest_numbers() or {}).get("rate_by_flag", {})
+    rate_sentence = ""
+    if rates.get("watch") and rates.get("low"):
+        rate_sentence = (f"On drugs recalled since 2020, **{rates['watch']:.1%}** of injectables were "
+                         f"followed within a year by a shortage of the same drug, against "
+                         f"**{rates['low']:.1%}** of other recalls. ")
     with st.expander("How to read this"):
         st.markdown(
-            "Each recall gets points for the signs that came before past shortages: **2** for a "
-            "sterility problem, **2** when only 1 or 2 companies make the drug (**1** for 3 to 5), "
-            "and **1** for an injectable. **4 or more is high, 2 or 3 is watch.**\n\n"
-            + lift_sentence +
-            "Most recalls never lead to a shortage, so this is a watch list, not a prediction.")
+            "**High** means the recalled drug is on FDA's shortage list right now, so the recall "
+            "can make that shortage worse. That's a fact, not a prediction.\n\n"
+            "**Watch** means an injectable, the one sign that held up when each drug in each "
+            "recall event was counted on its own. " + rate_sentence +
+            "Most recalls never lead to a shortage, so this is a watch list, not a prediction.\n\n"
+            "Sterility problems and drugs with few makers used to add points too. Neither held up, "
+            "so they're shown as facts but no longer change the flag.")
 
 # ---------------------------------------------------------------- control chart
 
