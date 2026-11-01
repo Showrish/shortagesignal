@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from shortagesignal.audit import SHEET_PATH, read_sheet
 from shortagesignal.config import NDC_PATH, RECALLS_PATH, ROOT, SNAPSHOTS_PATH
 from shortagesignal.drugs import drug_key
-from shortagesignal.match import check_claude_key, known_drugs
+from shortagesignal.match import check_claude_key, drug_parts, known_drugs
 from shortagesignal.storage import load_batch, write_parquet
 from shortagesignal.tagging import MODEL, PRICE_IN, PRICE_OUT, make_client
 
@@ -314,6 +314,7 @@ def report_eval():
 
     con = duckdb.connect()
     known, brand_map = known_drugs(con, NDC_PATH, SNAPSHOTS_PATH, RECALLS_PATH)
+    known_parts = drug_parts(known)
     cache = _load_eval_cache()
     todo = {}
     for r in audit:
@@ -344,7 +345,8 @@ def report_eval():
             continue
         entry = cache.get(text_hash(r.get("firm"), r.get("product_description"))) or {}
         raw, conf = entry.get("drug_key") or None, entry.get("confidence", "")
-        used = check_claude_key(raw, known, brand_map) if conf in USE_CONFIDENCE else None
+        used = (check_claude_key(raw, known, brand_map, known_parts)
+                if conf in USE_CONFIDENCE else None)
         rows.append({"recall_number": r["recall_number"], "truth": truth,
                      "pipeline": r.get("drug_found") or None, "raw": raw, "claude": used,
                      "confidence": conf, "description": r.get("product_description")})

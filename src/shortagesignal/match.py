@@ -62,13 +62,31 @@ def identify_drug(ndc9s, openfda_text, description, ndc_map, vocabulary, brand_m
     return None, None
 
 
-def check_claude_key(key, known, brand_map):
-    """Claude's drug key if it's a known drug, the generic for a known brand, else None."""
+def drug_parts(keys):
+    """Every single drug in a set of drug keys, with combinations split into their parts."""
+    return {part for key in keys for part in key.split(" + ")}
+
+
+def check_claude_key(key, known, brand_map, known_parts=None):
+    """Claude's drug key if it's a known drug, the generic for a known brand, or a combination
+    whose every part is a known drug, else None.
+
+    Compounded mixes, like semaglutide with cyanocobalamin, aren't in any reference list as a
+    whole, but each part is. Only Claude's answers get this allowance: Claude is told to leave
+    out diluents, while a name read from the description could keep the sodium chloride of
+    'fentanyl in 0.9% sodium chloride'. Pass known_parts (drug_parts(known)) when checking
+    many keys, so it's worked out once."""
     if not key:
         return None
     if key in known:
         return key
-    return brand_map.get(key)
+    if key in brand_map:
+        return brand_map[key]
+    parts = key.split(" + ")
+    pool = drug_parts(known) if known_parts is None else known_parts
+    if len(parts) > 1 and all(part in pool for part in parts):
+        return key
+    return None
 
 
 def _directory(con, ndc_path):
@@ -150,12 +168,13 @@ def build_matches(con, f, workdir, claude_keys=None):
 
     recall_list = _recall_list(con, p["recalls"])
     known = (vocabulary | _openfda_names(recall_list)) if claude_keys else vocabulary
+    known_parts = drug_parts(known)
     recall_rows, claude_rejected = [], 0
     for recall_number, description, openfda_text in recall_list:
         raw = claude_keys.get(recall_number)
         key, source = identify_drug(ndc9s.get(recall_number, []), openfda_text, description,
                                     ndc_map, vocabulary, brand_map,
-                                    claude_key=check_claude_key(raw, known, brand_map))
+                                    claude_key=check_claude_key(raw, known, brand_map, known_parts))
         if raw and source is None:
             claude_rejected += 1
         recall_rows.append({"recall_number": recall_number, "drug_key": key, "id_source": source})

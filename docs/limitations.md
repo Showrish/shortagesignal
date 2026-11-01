@@ -21,7 +21,7 @@ What ShortageSignal can't see, where it can be wrong, and how far its findings g
 ## Where the AI parts can be wrong
 
 - **Root causes:** rules tag about 99% of recalls, and Claude tags the rest. Both were scored on the same 99 hand-audited recalls that the rules were tuned on, so those scores are optimistic. Claude's low and medium confidence answers go to a review list, but nobody reviews them automatically.
-- **Drug names:** Claude named the drug for about 3,600 recalls. In the evaluation, 82% were right when salts are ignored, on the same 99 recalls. Its name is only used when Claude is fairly sure and the drug is known to exist, which catches most wrong answers but not all.
+- **Drug names:** Claude named the drug for about 3,600 recalls. In the evaluation, 82% were right when salts are ignored, on the same 99 recalls. Its name is only used when Claude is fairly sure and the drug is known to exist, or, for a combination like a compounded semaglutide with cyanocobalamin, when every part is. That catches most wrong answers, but not all.
 - **Ask the data:** the chatbot got 17 of 18 test questions right, but the developer wrote those questions and fixed the prompt after seeing the first results. Real questions are looser. Every answer shows its SQL so it can be checked, and the first live question did come back wrong before a fix.
 
 The fresh hand labels in issue #47 are meant to give honest scores on recalls nothing was tuned on.

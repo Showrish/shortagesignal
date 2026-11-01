@@ -43,6 +43,30 @@ def test_check_claude_key_only_accepts_known_drugs():
     assert check_claude_key(None, known, BRANDS) is None
 
 
+def test_check_claude_key_accepts_combinations_of_known_drugs():
+    known = {"semaglutide", "cyanocobalamin", "lidocaine hydrochloride + epinephrine bitartrate"}
+    # a compounded mix: no reference list has it, but every part is a known drug
+    assert check_claude_key("cyanocobalamin + semaglutide", known, BRANDS) == "cyanocobalamin + semaglutide"
+    # a part of a known combination counts as a known drug too
+    assert check_claude_key("epinephrine bitartrate + semaglutide", known, BRANDS) == (
+        "epinephrine bitartrate + semaglutide")
+    # one unknown part is enough to say no, and a single unknown drug is still no
+    assert check_claude_key("glutathione + semaglutide", known, BRANDS) is None
+    assert check_claude_key("glutathione", known, BRANDS) is None
+
+
+def test_identify_drug_keeps_text_names_strict_for_combinations():
+    # A combination read from the description only counts when the combination itself is known.
+    # Known parts aren't enough there, since a description can name a diluent, as in "fentanyl in
+    # 0.9% sodium chloride". Claude, which is told to leave diluents out, gets the allowance.
+    vocabulary = {"semaglutide", "cyanocobalamin"}
+    text = "Semaglutide/Cyanocobalamin Injection"
+    assert identify_drug([], None, text, NDC_MAP, vocabulary, BRANDS) == (None, None)
+    assert identify_drug([], None, text, NDC_MAP, vocabulary, BRANDS,
+                         claude_key="cyanocobalamin + semaglutide") == (
+        "cyanocobalamin + semaglutide", "claude")
+
+
 def _fixture(con, tmp_path):
     """Two directory products, four recalls (one unnamed), two shortage listings."""
     f = {name: tmp_path / f"{name}.parquet" for name in (

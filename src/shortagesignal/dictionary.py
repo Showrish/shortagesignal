@@ -265,7 +265,7 @@ TABLES = [
          "text_hash": "A fingerprint of the product description.",
          "ingredients": "The active ingredients by generic name, as Claude read them.",
          "drug_key": "Claude's drug as a cleaned name. Matching only uses it when it's a drug "
-                     "known to exist.",
+                     "known to exist, or a combination whose every part is one.",
          "strength": "The strength, as Claude read it.",
          "dosage_form": "The dosage form, as Claude read it.",
          "compounded": "Whether Claude thinks it was compounded.",
