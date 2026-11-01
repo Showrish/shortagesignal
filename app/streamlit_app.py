@@ -190,30 +190,43 @@ with flags:
     """, [date.today() - timedelta(days=days)]).df()
     counts = recent["flag"].value_counts()
     x, y, z = st.columns(3)
-    x.metric("🔴 High", int(counts.get("high", 0)))
-    y.metric("🟠 Watch", int(counts.get("watch", 0)))
-    z.metric("⚪ Low", int(counts.get("low", 0)))
+    x.metric("🔴 High", int(counts.get("high", 0)), help="The drug is already on FDA's shortage list.")
+    y.metric("🟠 Watch", int(counts.get("watch", 0)), help="An injectable.")
+    z.metric("⚪ Low", int(counts.get("low", 0)), help="Neither.")
+
+    # what the flags mean, always on screen, with the odds from the latest backtest
+    rates = (backtest_numbers() or {}).get("rate_by_flag", {})
+    odds = ""
+    if rates.get("watch") and rates.get("low"):
+        def per_100(rate):
+            return f"{100 * rate:.0f}" if rate >= 0.01 else f"{100 * rate:.1f}"
+        odds = (f". About {per_100(rates['watch'])} in 100 see their drug go short within a "
+                f"year, against {per_100(rates['low'])} in 100 for other recalls")
+    st.markdown("🔴 **High:** the drug is already short, so this recall can make it worse. "
+                f"🟠 **Watch:** an injectable{odds}. ⚪ **Low:** neither.")
+    if not counts.get("high", 0):
+        st.caption(f"No recall in the last {days} days hit a drug that's already short.")
 
     view = recent[recent["flag"].isin(levels)].copy()
     view["flag"] = view["flag"].map(FLAG_LABELS)
     view["drug"] = view["drug"].fillna("(not named)").str.capitalize()
     view["reasons"] = view["reasons"].fillna("").str.capitalize()
+    # the columns people read first, then the details
+    view = view[["flag", "reported", "drug", "firm", "reasons", "root_cause", "product", "class",
+                 "recall_number"]]
     st.dataframe(view, hide_index=True, column_config={
         "flag": st.column_config.TextColumn("Flag"),
-        "points": st.column_config.NumberColumn(
-            "Points", help="2 when the drug is on FDA's shortage list now, 1 for an injectable."),
         "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
-        "recall_number": st.column_config.TextColumn("Recall"),
-        "firm": st.column_config.TextColumn("Firm"),
         "drug": st.column_config.TextColumn("Drug"),
-        "root_cause": st.column_config.TextColumn("Root cause"),
+        "firm": st.column_config.TextColumn("Firm"),
         "reasons": st.column_config.TextColumn("Why flagged"),
-        "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the most serious."),
+        "root_cause": st.column_config.TextColumn("Root cause"),
         "product": st.column_config.TextColumn("Product", width="large"),
+        "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the most serious."),
+        "recall_number": st.column_config.TextColumn("Recall"),
     })
     st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
                        file_name=f"shortagesignal_flags_{date.today()}.csv", mime="text/csv")
-    rates = (backtest_numbers() or {}).get("rate_by_flag", {})
     rate_sentence = ""
     if rates.get("watch") and rates.get("low"):
         rate_sentence = (f"On drugs recalled since 2020, **{rates['watch']:.1%}** of injectables were "
