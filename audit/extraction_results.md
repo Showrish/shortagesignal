@@ -5,10 +5,10 @@ Scored against the 74 audited recalls where the drug is clear. Claude only runs 
 | | Exact name | Ignoring salts |
 |---|---|---|
 | Finds the drug, before Claude | 48 of 74 (65%) | 48 of 74 (65%) |
-| Finds the drug, with Claude | 58 of 74 (78%) | 61 of 74 (82%) |
+| Finds the drug, with Claude | 60 of 74 (81%) | 67 of 74 (91%) |
 | Claude alone, before any checks | 48 of 74 (65%) | 70 of 74 (95%) |
 
-On the 23 recalls matching couldn't name, ignoring salts, Claude's checked answer was right for 13, wrong for 0, and not used for 10 (no drug named, low confidence, or not a known drug).
+On the 23 recalls matching couldn't name, ignoring salts, Claude's checked answer was right for 19, wrong for 2, and not used for 2 (no drug named, low confidence, or not a known drug).
 
 ## Claude by confidence, before the checks
 

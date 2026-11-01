@@ -329,7 +329,7 @@ To query the Parquet tables, `python -m shortagesignal.run_sql` gives each one t
 |---|---|---|
 | `text_hash` | text | A fingerprint of the product description. |
 | `ingredients` | text | The active ingredients by generic name, as Claude read them. |
-| `drug_key` | text | Claude's drug as a cleaned name. Matching only uses it when it's a drug known to exist. |
+| `drug_key` | text | Claude's drug as a cleaned name. Matching only uses it when it's a drug known to exist, or a combination whose every part is one. |
 | `strength` | text | The strength, as Claude read it. |
 | `dosage_form` | text | The dosage form, as Claude read it. |
 | `compounded` | text | Whether Claude thinks it was compounded. |
