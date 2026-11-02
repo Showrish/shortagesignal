@@ -1,0 +1,31 @@
+recall_number,group,root_cause,root_cause_source,confidence,drug_key,drug_source
+D-0009-2021,claude_tag,CGMP,claude,medium,diethylpropion hydrochloride,ndc_directory
+D-0032-2026,claude_tag,Labeling or packaging,claude,high,cetirizine hydrochloride,ndc_directory
+D-0047-2015,rules,Microbial contamination,rule,,cvs,text_name
+D-0066-2015,claude_drug,Sterility,rule,,cefazolin sodium,claude
+D-0214-2018,claude_drug,CGMP,rule,,titanium dioxide + zinc oxide,claude
+D-0226-2019,rules,Sterility,rule,,estradiol,text_name
+D-0289-2018,rules,Potency,rule,,,
+D-0306-2026,claude_tag,Labeling or packaging,claude,high,doxazosin mesylate,ndc_directory
+D-0327-2017,claude_drug,Sterility,rule,,testosterone cypionate,claude
+D-0357-2016,rules,Sterility,rule,,edetate calcium disodium,claude
+D-0457-2026,claude_tag,CGMP,claude,medium,menthol flavor cough drop,ndc_directory
+D-0799-2018,rules,CGMP,rule,,ribociclib,ndc_directory
+D-0978-2022,claude_drug,Labeling or packaging,rule,,salicylic acid,claude
+D-1226-2020,claude_tag,CGMP,claude,high,ergotamine tartrate,text_name
+D-1286-2014,claude_tag,Particulates,claude,medium,dextromethorphan hydrobromide + guaifenesin,claude
+D-1308-2014,rules,Microbial contamination,rule,,benzalkonium chloride,claude
+D-1310-2014,claude_tag,Container or device defect,claude,medium,,
+D-135-2013,claude_drug,Particulates,rule,,trastuzumab,claude
+D-1354-2019,claude_drug,CGMP,rule,,oxymetazoline hydrochloride,claude
+D-1363-2020,claude_tag,Potency,claude,high,,
+D-1384-2012,claude_tag,Labeling or packaging,claude,high,ethinyl estradiol + levonorgestrel,ndc_directory
+D-1413-2019,claude_drug,Sterility,rule,,chlorpromazine hydrochloride,claude
+D-1519-2016,claude_tag,Labeling or packaging,claude,high,lamotrigine,ndc_directory
+D-1522-2019,claude_drug,CGMP,rule,,docusate sodium,claude
+D-1882-2019,rules,CGMP,rule,,oxaliplatin,claude
+D-220-2013,rules,Chemical or foreign contamination,rule,,ciprofloxacin,ndc_directory
+D-259-2013,rules,Chemical or foreign contamination,rule,,levothyroxine sodium,ndc_directory
+D-444-2013,claude_drug,CGMP,rule,,levothyroxine sodium,claude
+D-559-2015,rules,Chemical or foreign contamination,rule,,capecitabine,claude
+D-903-2013,claude_drug,Labeling or packaging,rule,,calcium carbonate,claude
