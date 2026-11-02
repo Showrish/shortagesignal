@@ -13,18 +13,19 @@ What ShortageSignal can't see, where it can be wrong, and how far its findings g
 
 ## Where matching can be wrong
 
-- **About 24% of recalls have no drug name,** mostly compounded products and unusual descriptions. They can't link to a shortage by drug, so they're left out of the drug-level analysis.
+- **About 17% of recalls have no drug name,** mostly compounded products and unusual descriptions. They can't link to a shortage by drug, so they're left out of the drug-level analysis.
 - **Drug-only links are loose.** They mean the same drug from any company. 32 of the 45 recalled drugs that were followed by a shortage rest on this kind of link, so many of those shortages may have nothing to do with the recall.
 - **Drug names don't always line up.** Salts and combination products can split one drug into two names, like quinapril and quinapril hydrochloride, or miss a match between them.
 - **Company names are cleaned with rules.** Subsidiaries, renamed firms and unusual spellings can still be counted as different companies.
 
 ## Where the AI parts can be wrong
 
-- **Root causes:** rules tag about 99% of recalls, and Claude tags the rest. Both were scored on the same 99 hand-audited recalls that the rules were tuned on, so those scores are optimistic. Claude's low and medium confidence answers go to a review list, but nobody reviews them automatically.
-- **Drug names:** Claude named the drug for about 3,600 recalls. In the evaluation, 82% were right when salts are ignored, on the same 99 recalls. Its name is only used when Claude is fairly sure and the drug is known to exist, or, for a combination like a compounded semaglutide with cyanocobalamin, when every part is. That catches most wrong answers, but not all.
-- **Ask the data:** the chatbot got 17 of 18 test questions right, but the developer wrote those questions and fixed the prompt after seeing the first results. Real questions are looser. Every answer shows its SQL so it can be checked, and the first live question did come back wrong before a fix.
+The full results are in [ai_evals.md](ai_evals.md). In short:
 
-The fresh hand labels in issue #47 are meant to give honest scores on recalls nothing was tuned on.
+- **Root causes:** rules tag about 99% of recalls, and Claude tags the rest. On 30 fresh recalls nothing was tuned on, the rules were right 18 of 20 times and Claude 5 of 9, on the hardest leftovers. That's a small sample with wide ranges. Claude's low and medium confidence answers go to a review list, but nobody reviews them automatically.
+- **Drug names:** Claude named the drug for about 4,900 recalls. On the fresh labels its names were right 14 of 15 times when salts are ignored, against 9 of 12 for matching. Its name is only used when Claude is fairly sure and the drug is known to exist, or, for a combination like a compounded semaglutide with cyanocobalamin, when every part is. That catches most wrong answers, but not all.
+- **Ask the data:** the chatbot got 17 of 18 test questions right, but the developer wrote those questions and fixed the prompt after seeing the first results. Real questions are looser. Every answer shows its SQL so it can be checked, and the first live question did come back wrong before a fix.
+- **One person labeled everything,** with no second labeler, and some root-cause categories have fuzzy edges.
 
 ## How far the findings go
 
