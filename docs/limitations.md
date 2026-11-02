@@ -1,6 +1,6 @@
 # Limitations
 
-What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Oct 26, 2026. The latest ones are in [audit/risk_backtest.md](../audit/risk_backtest.md).
+What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Nov 2, 2026. The latest ones are in [audit/risk_backtest.md](../audit/risk_backtest.md).
 
 ## What the data leaves out
 
@@ -29,15 +29,15 @@ The full results are in [ai_evals.md](ai_evals.md). In short:
 
 ## How far the findings go
 
-- **Shortages after a recall are rare.** About 1.3% of drugs recalled since 2020 (45 of 3,421) were followed within a year by a shortage of the same drug. With so few, every rate here has a wide range.
+- **Shortages after a recall are rare.** About 1.2% of drugs recalled since 2020 (45 of 3,639) were followed within a year by a shortage of the same drug. With so few, every rate here has a wide range.
 - **Followed doesn't mean caused.** Many of the 45 are drugs that are short again and again, like fentanyl, atropine and rocuronium. A recall of a fragile drug and a later shortage can both happen without one causing the other.
-- **The signs were chosen by looking at this same data,** so the backtest is optimistic. An earlier version counted recall events instead of drugs and overstated the signal, with Sterility at about 3 times the average and high flags at about 4 times. Counting each drug in each event cut Sterility to 1.4 times and the old high flag to zero. The decision log has the details.
+- **The signs were chosen by looking at this same data,** so the backtest is optimistic. An earlier version counted recall events instead of drugs and overstated the signal, with Sterility at about 3 times the average and high flags at about 4 times. Counting each drug in each event cut Sterility to about 1.3 times and the old high flag to zero. The decision log has the details.
 - **Recent recalls haven't had a full year to be followed,** so the rates for the latest year are understated.
 
 ## How far the risk flag goes
 
 - **High is a status, not a prediction.** It means the drug is on FDA's shortage list right now, so the recall can make a shortage worse.
-- **Watch is a weak signal.** Injectables were followed by a shortage of the same drug 2.1% of the time, against 0.9% for everything else. Most watch flags will never lead to a shortage.
+- **Watch is a weak signal.** Injectables were followed by a shortage of the same drug 1.9% of the time, against 0.9% for everything else. Most watch flags will never lead to a shortage.
 - **The honest test hasn't happened yet.** `risk_log.csv` records each new recall's flag on the day it's given, to check against shortages that come later. It started in October 2026 and needs months before it says anything, and flags before Oct 26, 2026 used the old points.
 
 ## Keeping it running

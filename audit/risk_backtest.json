@@ -1,16 +1,16 @@
 {
   "unit": "one drug in one recall event",
   "since": "2020-01-01",
-  "recalled_drugs": 3421,
+  "recalled_drugs": 3639,
   "followed": 45,
-  "rate": 0.0132,
+  "rate": 0.0124,
   "rate_by_flag": {
-    "watch": 0.0211,
-    "low": 0.0094
+    "low": 0.0092,
+    "watch": 0.0186
   },
   "lift": {
-    "watch": 1.6,
-    "low": 0.72
+    "low": 0.74,
+    "watch": 1.51
   },
-  "sterility_lift": 1.45
+  "sterility_lift": 1.31
 }
