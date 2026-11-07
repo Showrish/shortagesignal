@@ -45,7 +45,7 @@ The full results are in [ai_evals.md](ai_evals.md). In short:
 - **It depends on openFDA.** The data checks catch fields that disappear, lists that collapse and stale data, but not a field that quietly changes meaning.
 - **One person maintains it.** GitHub pauses the schedule after 60 days without activity in the repo, and the Claude credits are prepaid. The weekly digest warns about both.
 - **The data branch keeps one commit,** and run backups last 30 days. Older states of the data can only be rebuilt from the tables' own history, like `recall_versions` and `shortage_snapshots`.
-- **The dashboard runs on Streamlit's free tier,** so it can go to sleep when nobody has visited for a while and wake up on the next visit.
+- **The dashboard runs on Streamlit's free tier,** which puts apps to sleep without visitors. A workflow opens it every 6 hours to keep it awake, but if Streamlit changes how sleeping works, the first visitor may still see a wake-up button.
 
 ## Not medical advice
 
