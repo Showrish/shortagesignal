@@ -11,6 +11,7 @@ How ShortageSignal runs day to day, and what to do when something breaks. For wh
 | CI | Every pull request and every change to `main` | GitHub Actions, `.github/workflows/ci.yml` | A pass or fail on the pull request. `main` only takes pull requests that pass |
 | Dashboard | Always on | Streamlit Community Cloud | Redeploys on every change to `main`, and downloads the data branch's files at most once an hour |
 | Power BI report | When you open it | Power BI Desktop on Windows | Nothing. Refresh pulls the data branch's files straight from GitHub |
+| Keep-awake | Every 6 hours, at 17 past | GitHub Actions, `.github/workflows/keep-awake.yml` | Nothing. It opens the dashboard in a headless browser so Streamlit doesn't put it to sleep, and clicks the wake button if it's asleep |
 
 Only one daily run happens at a time. A second one waits, and the weekly digest waits for a daily run that's still going.
 
@@ -106,6 +107,8 @@ The dashboard is `app/streamlit_app.py`, on Streamlit Community Cloud. It doesn'
 
 **Ask the data** is behind `ASK_PASSCODE` and capped at 50 questions a day, shared by everyone using the app. The count starts over each day, and when the app restarts. Claude writes one SQL query, which runs on a locked, in-memory copy of the tables, then answers from the rows. Each question costs about 0.05 cents. To score it after changing the prompt, run `python -m shortagesignal.ask eval`, which costs under a cent.
 
+**Keeping it awake:** Streamlit's free tier puts the app to sleep when nobody visits. The keep-awake workflow visits every 6 hours with a real browser, since a plain ping doesn't count, and fails, which emails you, only if the app won't wake up. To check it, run **Keep the dashboard awake** from the Actions tab and read its log.
+
 **If the dashboard is down,** open the app's **Manage app** panel on Streamlit and check the logs, then use **Reboot app**. If a file it needs is missing from the data branch, the last daily run probably failed.
 
 ## Power BI
@@ -114,7 +117,7 @@ The report is a Power BI project in `reports/powerbi/`, saved as text files so g
 
 ## Paused schedules
 
-GitHub pauses scheduled workflows in a public repo after 60 days without activity in it. If the Monday digest stops arriving, open **Actions** and click **Enable workflow** on **Daily pipeline** and **Weekly digest**.
+GitHub pauses scheduled workflows in a public repo after 60 days without activity in it. If the Monday digest stops arriving, open **Actions** and click **Enable workflow** on **Daily pipeline**, **Weekly digest** and **Keep the dashboard awake**.
 
 ## Working on the code
 

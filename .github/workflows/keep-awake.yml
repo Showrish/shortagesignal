@@ -1,0 +1,30 @@
+name: Keep the dashboard awake
+
+# Streamlit's free tier puts the dashboard to sleep when nobody visits for a while.
+# This opens it in a headless browser every 6 hours, and wakes it up if it's asleep.
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # every 6 hours, at 17 past, away from the daily run on the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install a headless browser
+        run: |
+          pip install playwright==1.47.0
+          python -m playwright install --with-deps chromium
+
+      - name: Visit the dashboard
+        run: python scripts/keep_awake.py
