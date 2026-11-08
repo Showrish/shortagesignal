@@ -45,6 +45,8 @@ import requests
 
 from shortagesignal.checks import collect_checks, last_good_run, read_history, report
 from shortagesignal.config import (
+    BACKTEST_PATH,
+    BACKTEST_REPORT_PATH,
     CHECK_LOG_PATH,
     CLAUDE_DRUGS_PATH,
     CLAUDE_TAGS_PATH,
@@ -75,7 +77,7 @@ from shortagesignal.config import (
 from shortagesignal.extract import extract_drugs, write_review
 from shortagesignal.identify import build_ids
 from shortagesignal.match import build_matches
-from shortagesignal.risk import build_control_chart, build_risk
+from shortagesignal.risk import build_control_chart, build_risk, run_backtest, save_backtest
 from shortagesignal.tagging import build_root_causes, make_client
 from shortagesignal.pull_full_history import API_KEY, API_URL, HEADERS, MANIFEST_URL
 from shortagesignal.pull_full_history import from_bulk_files, get_json
@@ -114,7 +116,7 @@ DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PAT
                                UNMATCHED_PATH, ROOT_CAUSES_PATH, CLAUDE_TAGS_PATH,
                                TAG_REVIEW_PATH, CLAUDE_DRUGS_PATH, EXTRACT_REVIEW_PATH,
                                RISK_PATH, RISK_LOG_PATH, MAKERS_PATH, WEEKLY_PATH,
-                               STATE_PATH)]
+                               BACKTEST_PATH, BACKTEST_REPORT_PATH, STATE_PATH)]
 
 
 # ---------------------------------------------------------------- helpers
@@ -580,6 +582,21 @@ def run(data_dir, now, stats):
                   f"{k['recent']['high']:,} high, {k['recent']['watch']:,} watch and "
                   f"{k['recent']['low']:,} low. {k['logged']:,} new ones logged. Labelers counted "
                   f"for {k['drugs_with_labelers']:,} drugs")
+            # The backtest, so the dashboard and the digest always quote today's numbers. It's a
+            # report on the data, not part of it, so a problem here only skips it, and the last
+            # saved copy stays.
+            try:
+                lines, summary = run_backtest(recalls, stage / RISK_PATH.name,
+                                              stage / LINKS_PATH.name, ndc, today)
+                if lines:
+                    save_backtest(lines, summary, stage / BACKTEST_REPORT_PATH.name,
+                                  stage / BACKTEST_PATH.name)
+                    rates = summary["rate_by_flag"]
+                    print(f"Backtest: {summary['recalled_drugs']:,} drugs recalled since 2020, "
+                          f"watch followed {rates.get('watch', 0):.1%} of the time and low "
+                          f"{rates.get('low', 0):.1%}")
+            except Exception as e:  # a report, so it never stops the run
+                print(f"Backtest skipped: {e}")
             if w["ucl"] is not None:
                 print(f"Control chart: {w['last_events']} recall events in the week of "
                       f"{w['last_week']}, normal range {w['lcl']:.0f} to {w['ucl']:.0f}"

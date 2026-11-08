@@ -339,6 +339,22 @@ TABLES = [
          "lcl": "The lower control limit, never below 0.",
          "signal": "above or below when the week falls outside the limits. Empty otherwise.",
      }},
+    {"file": "risk_backtest.json", "name": None,
+     "row": "the latest backtest of the risk flag, one value per key",
+     "made_by": "risk.py, at the end of step 8 of every daily run, from the tables that run "
+                "just built. The dashboard and the weekly digest quote it, and "
+                "risk_backtest.md next to it has the full tables.",
+     "columns": {
+         "unit": "What one recalled drug means here: one drug in one recall event.",
+         "since": "The first recall date it counts.",
+         "recalled_drugs": "How many recalled drugs it scored.",
+         "followed": "How many were followed within a year by a shortage of the same drug.",
+         "rate": "followed divided by recalled_drugs.",
+         "rate_by_flag": "The rate for watch flags and for low ones.",
+         "lift": "Each flag's rate divided by the overall rate.",
+         "sterility_lift": "The rate for sterility recalls divided by the overall rate.",
+         "computed_on": "The day it was worked out.",
+     }},
     {"file": "run_log.csv", "name": None,
      "row": "one pipeline run, whether it worked or not",
      "made_by": "ingest.py, at the end of every run. The weekly digest and the dashboard read it.",
@@ -431,8 +447,10 @@ def read_schema(con, path):
             header = next(reader, [])
             rows = sum(1 for _ in reader)
         return [(c, "text") for c in header], rows
-    state = json.loads(path.read_text(encoding="utf-8"))
-    return [(k, type(v).__name__.replace("str", "text")) for k, v in state.items()], 1
+    values = json.loads(path.read_text(encoding="utf-8"))
+    kinds = {"str": "text", "int": "whole number", "float": "number", "bool": "true/false",
+             "dict": "keys and values", "list": "list", "NoneType": "empty"}
+    return [(k, kinds.get(type(v).__name__, type(v).__name__)) for k, v in values.items()], 1
 
 
 def build(data_dir, today):

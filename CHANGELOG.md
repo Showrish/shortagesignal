@@ -3,6 +3,8 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+### Changed
+- Every daily run works out the risk flag's backtest and saves it to the data branch, so the dashboard and the digest always quote today's numbers
 
 ## [1.0.0] - 2026-11-08
 ### Added

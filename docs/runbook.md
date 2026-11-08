@@ -6,7 +6,7 @@ How ShortageSignal runs day to day, and what to do when something breaks. For wh
 
 | What | When | Where it runs | What it leaves |
 |---|---|---|---|
-| Daily pipeline | Every day at 12:00 UTC (8 AM Boston in summer, 7 AM in winter), and on demand | GitHub Actions, `.github/workflows/daily.yml` | The latest files on the `data` branch, in one commit, plus a 30-day backup on the run's page |
+| Daily pipeline | Every day at 12:00 UTC (8 AM Boston in summer, 7 AM in winter), and on demand | GitHub Actions, `.github/workflows/daily.yml` | The latest files on the `data` branch, in one commit, including the day's risk-flag backtest, plus a 30-day backup on the run's page |
 | Weekly digest | Mondays at 13:00 UTC, an hour after the daily run, and on demand | GitHub Actions, `.github/workflows/weekly.yml` | A GitHub issue labeled `digest` (or an email), plus the digest and its Excel list on the run's page for 90 days |
 | CI | Every pull request and every change to `main` | GitHub Actions, `.github/workflows/ci.yml` | A pass or fail on the pull request. `main` only takes pull requests that pass |
 | Dashboard | Always on | Streamlit Community Cloud | Redeploys on every change to `main`, and downloads the data branch's files at most once an hour |
@@ -131,7 +131,7 @@ pytest                                             # the tests
 ruff check .                                       # the linter
 python -m shortagesignal.ingest                    # a full run, with Claude off
 python -m shortagesignal.run_sql sql/lag_by_root_cause.sql     # any SQL file, by table name
-python -m shortagesignal.risk backtest             # the risk flag's backtest
+python -m shortagesignal.risk backtest             # the flag's backtest, a snapshot into audit/
 python -m shortagesignal.risk check-log            # the flag's forward test, on the risk log
 python -m shortagesignal.dictionary                # rebuild docs/data_dictionary.md
 SHORTAGESIGNAL_DATA=local streamlit run app/streamlit_app.py   # the dashboard on local data

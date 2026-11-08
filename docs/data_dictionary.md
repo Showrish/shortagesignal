@@ -28,6 +28,7 @@ To query the Parquet tables, `python -m shortagesignal.run_sql` gives each one t
 | [risk_log.csv](#risk_logcsv) |  | one flag given to a newly reported recall, on the day it was given | 105 |
 | [drug_makers.parquet](#drug_makersparquet) | `drug_makers` | one drug in the NDC directory, with how many companies list it | 15,485 |
 | [weekly_recalls.parquet](#weekly_recallsparquet) | `weekly_recalls` | one week, Monday to Sunday, by the week FDA reported the recalls | 750 |
+| [risk_backtest.json](#risk_backtestjson) |  | the latest backtest of the risk flag, one value per key | 1 |
 | [run_log.csv](#run_logcsv) |  | one pipeline run, whether it worked or not | 37 |
 | [check_log.csv](#check_logcsv) |  | one data check in one run | 576 |
 | [state.json](#statejson) |  | the pipeline's bookkeeping, one value per key | 1 |
@@ -405,6 +406,22 @@ To query the Parquet tables, `python -m shortagesignal.run_sql` gives each one t
 | `ucl` | number | The upper control limit. A week above it is unusually busy. |
 | `lcl` | number | The lower control limit, never below 0. |
 | `signal` | text | above or below when the week falls outside the limits. Empty otherwise. |
+
+## risk_backtest.json
+
+**One row is** the latest backtest of the risk flag, one value per key. **Made by** risk.py, at the end of step 8 of every daily run, from the tables that run just built. The dashboard and the weekly digest quote it, and risk_backtest.md next to it has the full tables.
+
+| Column | Type | What it holds |
+|---|---|---|
+| `unit` | text | What one recalled drug means here: one drug in one recall event. |
+| `since` | text | The first recall date it counts. |
+| `recalled_drugs` | whole number | How many recalled drugs it scored. |
+| `followed` | whole number | How many were followed within a year by a shortage of the same drug. |
+| `rate` | number | followed divided by recalled_drugs. |
+| `rate_by_flag` | keys and values | The rate for watch flags and for low ones. |
+| `lift` | keys and values | Each flag's rate divided by the overall rate. |
+| `sterility_lift` | number | The rate for sterility recalls divided by the overall rate. |
+| `computed_on` | text | The day it was worked out. |
 
 ## run_log.csv
 
