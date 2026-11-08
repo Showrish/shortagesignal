@@ -23,7 +23,7 @@ Every day, GitHub Actions runs the pipeline end to end:
 2. **Identifies each recall's drug** from its NDC codes, FDA's own annotations and the product text, then **links recalls to shortage listings** at four strengths: the same package, the same product, the same drug and company, or the same drug.
 3. **Asks Claude Haiku to name the drug** when matching can't. That takes recalls with a drug name from 56% to 83%, and a name is only used when Claude is fairly sure and the drug is known to exist.
 4. **Tags each recall's root cause.** SQL rules tag 99%, and Claude tags the rest, limited to 12 categories by a tool schema.
-5. **Flags each recall:** high when its drug is already on the shortage list, watch for an injectable. It also charts weekly recall events against a normal range.
+5. **Flags each recall:** high when its drug is already on the shortage list, watch for an injectable. Every new flag is logged the day it's given, and the Monday digest checks the log against shortages that come later. It also charts weekly recall events against a normal range.
 6. **Runs 16 data checks before saving anything.** Errors keep yesterday's data, and warnings flag the run.
 7. **Saves every table to the `data` branch,** which the dashboard, the Power BI report and the Monday digest all read.
 

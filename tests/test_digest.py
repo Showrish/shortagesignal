@@ -145,6 +145,21 @@ def test_compose_handles_a_quiet_week():
     assert "7 of 7 pipeline runs worked this week, and every data check passed." in text
 
 
+def test_compose_reports_the_forward_test():
+    from shortagesignal.risk import judge_log
+    facts = {"today": TODAY, "recalls": 0, "events": 0, "flagged": [], "high": 0, "watch": 0,
+             "in_shortage": [], "week": None, "recent_signals": 0, "listings_added": 0,
+             "listings_left": 0, "runs": 7, "runs_ok": 7, "warnings": 0,
+             "tag_review": [], "tag_review_recalls": 0, "extract_review": []}
+    units = [{"event_id": "e", "drug_key": k, "flag": f, "flagged_on": date(2026, 10, 27),
+              "first_posted": None} for k, f in [("heparin", "watch"), ("aspirin", "low")]]
+    facts["forward"] = judge_log(units, date(2026, 11, 9))
+    text = to_text(*compose(facts))
+    assert ("Testing the flag on new recalls: 2 recalled drugs flagged since Oct 26, 2026 are "
+            "being followed, and it's too early to judge") in text
+    assert "The first ones finish on Oct 27, 2027." in text
+
+
 def test_workbook_has_a_sheet_per_list(tmp_path):
     path = write_workbook(gather(TODAY, _fixture(tmp_path), NO_SETTINGS), tmp_path / "out" / "needs_a_look.xlsx")
     wb = load_workbook(path)

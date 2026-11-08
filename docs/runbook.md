@@ -36,6 +36,7 @@ Keys never go in git. `.env.example` lists the names, and a local `.env` (git-ig
 1. **Read the Monday digest.** It covers the week's recalls against the normal range, the high and watch flags, recalls of drugs already in shortage, changes to FDA's shortage list, and Keeping it running.
 2. **Open its Excel list** from the run's page. It has the flagged recalls, Claude's unsure root causes (`tag_review.csv`) and the drug names Claude gave that weren't used (`extract_review.csv`).
 3. **Fix patterns, not rows.** When the same kind of reason keeps landing in the unsure list, add a rule to `sql/root_cause_rules.sql`, check it with `python -m shortagesignal.tagging rules`, and ship it as a pull request. Rules are free, and they're checked against the hand audit.
+4. **Glance at the flag's forward test.** The digest says in one line whether it's too early to judge, or how watch flags compare with low once flags have had their full year. For the whole table, run `python -m shortagesignal.risk check-log`.
 
 ## Run it again
 
@@ -131,6 +132,7 @@ ruff check .                                       # the linter
 python -m shortagesignal.ingest                    # a full run, with Claude off
 python -m shortagesignal.run_sql sql/lag_by_root_cause.sql     # any SQL file, by table name
 python -m shortagesignal.risk backtest             # the risk flag's backtest
+python -m shortagesignal.risk check-log            # the flag's forward test, on the risk log
 python -m shortagesignal.dictionary                # rebuild docs/data_dictionary.md
 SHORTAGESIGNAL_DATA=local streamlit run app/streamlit_app.py   # the dashboard on local data
 ```

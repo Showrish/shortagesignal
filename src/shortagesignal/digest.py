@@ -47,13 +47,14 @@ from shortagesignal.config import (
     HISTORY_PATH,
     LINKS_PATH,
     RECALLS_PATH,
+    RISK_LOG_PATH,
     RISK_PATH,
     ROOT,
     RUN_LOG_PATH,
     TAG_REVIEW_PATH,
     WEEKLY_PATH,
 )
-from shortagesignal.risk import flag_lift
+from shortagesignal.risk import flag_lift, judge_log, log_units
 
 DASHBOARD_URL = "https://shortagesignal.streamlit.app"
 REPO_URL = "https://github.com/Showrish/shortagesignal"
@@ -143,7 +144,8 @@ def gather(today, paths=None, settings=None):
     """Everything the digest says, counted from the pipeline's files."""
     p = {"risk": RISK_PATH, "recalls": RECALLS_PATH, "weekly": WEEKLY_PATH,
          "history": HISTORY_PATH, "links": LINKS_PATH, "tag_review": TAG_REVIEW_PATH,
-         "extract_review": EXTRACT_REVIEW_PATH, "run_log": RUN_LOG_PATH, **(paths or {})}
+         "extract_review": EXTRACT_REVIEW_PATH, "run_log": RUN_LOG_PATH,
+         "risk_log": RISK_LOG_PATH, **(paths or {})}
     for name in ("risk", "recalls", "weekly", "history", "links"):
         if not p[name].exists():
             sys.exit(f"{p[name]} is missing. Copy the data branch in first: "
@@ -196,6 +198,15 @@ def gather(today, paths=None, settings=None):
         FROM h, bounds
     """, [since, since]).fetchone()
 
+    # The forward test of the flag. Tests that pass their own files only get it when they pass
+    # a risk log too, so a real log on this machine can't leak into them.
+    forward = None
+    if p["risk_log"].exists() and (paths is None or "risk_log" in paths):
+        try:
+            forward = judge_log(log_units(con, p["risk"], p["links"], p["risk_log"])[0], today)
+        except duckdb.Error as e:
+            print(f"Skipping the forward test: {e}")
+
     all_runs = _read_csv(p["run_log"])
     runs = [r for r in all_runs if r.get("run_at_utc", "")[:10] >= since.isoformat()]
     tag_review = _read_csv(p["tag_review"])
@@ -218,6 +229,7 @@ def gather(today, paths=None, settings=None):
         "tag_review_recalls": int(sum(_number(r.get("recalls")) for r in tag_review)),
         "extract_review": extract_review,
         "backtest": flag_lift(),
+        "forward": forward,
         **upkeep(all_runs, today, upkeep_settings() if settings is None else settings),
     }
 
@@ -226,6 +238,32 @@ def gather(today, paths=None, settings=None):
 
 def _s(n, word, plural=None):
     return f"{n:,} {word if n == 1 else plural or word + 's'}"
+
+
+def forward_line(forward):
+    """The forward test of the flag in a sentence, or None before any flag is logged."""
+    if not forward:
+        return None
+    table = forward["table"]
+    n = sum(row["recalled_drugs"] for row in table.values())
+    if not n:
+        return None
+    since = forward["since"]
+    start = (f"Testing the flag on new recalls: {_s(n, 'recalled drug')} flagged since "
+             f"{since:%b} {since.day}, {since.year} {'is' if n == 1 else 'are'} being followed")
+    if forward["verdict"] == "too early":
+        line = f"{start}, and it's too early to judge, since a flag needs a full year."
+        when = forward["first_full_year"]
+        if when and not (table["watch"]["full_year"] or table["low"]["full_year"]):
+            line += f" The first ones finish on {when:%b} {when.day}, {when.year}."
+        return line
+    watch, low = table["watch"], table["low"]
+    end = {"working": "the 95% ranges don't overlap, so the flag is working so far",
+           "not working": "the 95% ranges don't overlap, so the flag isn't working",
+           "can't tell": "the 95% ranges overlap, so the difference could still be chance"}
+    return (f"{start}. Of the flags that have had their full year, {watch['rate']:.1%} of watch "
+            f"and {low['rate']:.1%} of low were followed by a shortage of the same drug, and "
+            f"{end[forward['verdict']]}.")
 
 
 def compose(facts):
@@ -263,9 +301,14 @@ def compose(facts):
         table = (["flag", "drug", "firm", "root cause", "reasons"],
                  [[r["flag"], r["drug"] or "(not named)", r["firm"], r["root_cause"], r["reasons"]]
                   for r in facts["flagged"][:10]])
-        sections.append(("Recalls worth watching", [para], table))
+        paragraphs = [para]
     else:
-        sections.append(("Recalls worth watching", ["No recall this week was flagged high or watch."], None))
+        table = None
+        paragraphs = ["No recall this week was flagged high or watch."]
+    forward = forward_line(facts.get("forward"))
+    if forward:
+        paragraphs.append(forward)
+    sections.append(("Recalls worth watching", paragraphs, table))
 
     if facts["in_shortage"]:
         para = (f"{_s(len({r['recall_number'] for r in facts['in_shortage']}), 'recall')} this week "

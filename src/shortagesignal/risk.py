@@ -2,6 +2,7 @@
 Day 10: a risk flag on every recall, maker counts, and a control chart on weekly recalls.
 
   python -m shortagesignal.risk backtest    how the flag does on drugs recalled since 2020
+  python -m shortagesignal.risk check-log   how the flag does on recalls it was given to, later
 
 The flag isn't a trained model, and it doesn't claim to predict much. Only about 1 in 100
 drugs recalled since 2020 was followed within a year by a shortage of the same drug that FDA
@@ -30,7 +31,13 @@ repackagers or relabelers. Repackagers that don't say so still count, so common 
 out high, which only makes the flag more cautious.
 
 New recalls go into risk_log.csv with the flag they got on the day they were reported, so
-later runs can check the flag on recalls it has never seen.
+later runs can check the flag on recalls it has never seen. That's the forward test, and
+check-log runs it. It counts the way the backtest does, one drug in one recall event, and a
+drug counts as followed when FDA posts a shortage listing of it after the flag and within a
+year. Rates only use flags that have had their full year: early hits are known sooner than
+misses, so counting them before the year is out would flatter the flag. Flags logged before
+2026-10-26 used the old points, so they're reported apart and don't judge the current flag.
+The weekly digest reports the forward test too.
 
 The control chart counts recall events per week by FDA report date. Its limits come from
 the two years before the last 13 weeks, using the moving-range method (an XmR chart), which
@@ -50,6 +57,7 @@ from shortagesignal.config import (
     LINKS_PATH,
     NDC_PATH,
     RECALLS_PATH,
+    RISK_LOG_PATH,
     RISK_PATH,
     ROOT,
 )
@@ -61,6 +69,10 @@ from shortagesignal.storage import load_batch, write_parquet
 WEEKLY_SQL = ROOT / "sql" / "weekly_recall_events.sql"
 BACKTEST_RESULTS = ROOT / "audit" / "risk_backtest.md"
 BACKTEST_JSON = ROOT / "audit" / "risk_backtest.json"
+CHECK_RESULTS = ROOT / "audit" / "risk_log_check.md"
+CHECK_JSON = ROOT / "audit" / "risk_log_check.json"
+FLAG_SINCE = date(2026, 10, 26)   # flags logged before this used the old points
+FOLLOW_DAYS = 365
 INJECTABLE = re.compile(r"inject|syringe|infusion|intraven|ampul|\bi\.?v\.?\b", re.I)
 VIAL = re.compile(r"\bvials?\b", re.I)
 # Eye drops and the like often come in single-use vials, but they aren't injected.
@@ -366,12 +378,238 @@ def backtest():
     print(f"Saved {BACKTEST_RESULTS} and {BACKTEST_JSON.name}")
 
 
+# ---------------------------------------------------------------- the forward test
+
+CHECK_SQL = """
+WITH logged AS (
+    SELECT l.recall_number, TRY_CAST(l.flagged_on AS DATE) AS flagged_on, l.flag,
+           k.event_id, k.drug_key
+    FROM read_csv('{log}', header = true, all_varchar = true) AS l
+    LEFT JOIN read_parquet('{risk}') AS k ON k.recall_number = l.recall_number
+),
+units AS (
+    -- one drug in one recall event, from the first day any of its recalls was flagged,
+    -- with the highest flag any of them got
+    SELECT event_id, drug_key, MIN(flagged_on) AS flagged_on,
+           CASE MAX(CASE flag WHEN 'high' THEN 3 WHEN 'watch' THEN 2 ELSE 1 END)
+               WHEN 3 THEN 'high' WHEN 2 THEN 'watch' ELSE 'low' END AS flag
+    FROM logged
+    WHERE drug_key IS NOT NULL AND flagged_on IS NOT NULL
+    GROUP BY event_id, drug_key
+),
+followed AS (
+    -- the first shortage of the same drug that FDA posted after the flag, within the window
+    SELECT u.event_id, u.drug_key,
+           MIN(TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE) AS first_posted
+    FROM units AS u
+    INNER JOIN read_parquet('{risk}') AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
+    INNER JOIN read_parquet('{links}') AS s ON s.recall_number = k.recall_number
+    WHERE s.shortage_list_type = 'shortage'
+      AND TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE > u.flagged_on
+      AND TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE <= u.flagged_on + INTERVAL {days} DAY
+    GROUP BY u.event_id, u.drug_key
+)
+SELECT u.event_id, u.drug_key, u.flag, u.flagged_on, f.first_posted
+FROM units AS u
+LEFT JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
+ORDER BY u.flagged_on, u.drug_key
+"""
+
+UNNAMED_SQL = """
+SELECT COUNT(*)
+FROM read_csv('{log}', header = true, all_varchar = true) AS l
+LEFT JOIN read_parquet('{risk}') AS k ON k.recall_number = l.recall_number
+WHERE k.drug_key IS NULL
+"""
+
+
+def wilson(hit, n, z=1.96):
+    """The 95% range for hit out of n, a Wilson interval, as (low, high). None when n is 0."""
+    if not n:
+        return None
+    p = hit / n
+    center = (p + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * (p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5 / (1 + z * z / n)
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def log_units(con, risk_path, links_path, log_path, days=FOLLOW_DAYS):
+    """(units, unnamed): every logged flag as a drug in a recall event, with the first
+    shortage of that drug posted after the flag and within days, and how many logged recalls
+    have no drug name, which can't be followed by a shortage of the same drug."""
+    log_path = Path(log_path)
+    if not log_path.exists():
+        return [], 0
+    with open(log_path, newline="", encoding="utf-8") as f:
+        if not any(True for _ in csv.DictReader(f)):
+            return [], 0
+    paths = {"risk": Path(risk_path).as_posix(), "links": Path(links_path).as_posix(),
+             "log": log_path.as_posix()}
+    rows = con.execute(CHECK_SQL.format(days=int(days), **paths)).fetchall()
+    units = [{"event_id": event_id, "drug_key": key, "flag": flag, "flagged_on": flagged_on,
+              "first_posted": first_posted}
+             for event_id, key, flag, flagged_on, first_posted in rows]
+    return units, con.execute(UNNAMED_SQL.format(**paths)).fetchone()[0]
+
+
+def judge_log(units, today, since=FLAG_SINCE, days=FOLLOW_DAYS):
+    """How the flags given since `since` turned out. For each flag: how many recalled drugs,
+    how many have had their full year, how many of those were followed, the rate with its 95%
+    range, and the ones still in their year, with any of those followed already. Rates only
+    use full years, since hits are known sooner than misses."""
+    window = timedelta(days=days)
+    current = [u for u in units if u["flagged_on"] >= since]
+    old = [u for u in units if u["flagged_on"] < since]
+    table = {}
+    for level in LEVELS:
+        group = [u for u in current if u["flag"] == level]
+        done = [u for u in group if u["flagged_on"] + window <= today]
+        waiting = [u for u in group if u["flagged_on"] + window > today]
+        hit = sum(1 for u in done if u["first_posted"])
+        table[level] = {"recalled_drugs": len(group), "full_year": len(done), "followed": hit,
+                        "rate": hit / len(done) if done else None,
+                        "range": wilson(hit, len(done)),
+                        "in_their_year": len(waiting),
+                        "followed_already": sum(1 for u in waiting if u["first_posted"])}
+    watch, low = table["watch"], table["low"]
+    if not watch["full_year"] or not low["full_year"]:
+        verdict = "too early"
+    elif watch["range"][0] > low["range"][1]:
+        verdict = "working"
+    elif watch["range"][1] < low["range"][0]:
+        verdict = "not working"
+    else:
+        verdict = "can't tell"
+    ends = [u["flagged_on"] + window for u in current
+            if u["flag"] in ("watch", "low") and u["flagged_on"] + window > today]
+    return {"since": since, "days": days, "table": table, "verdict": verdict,
+            "first_full_year": min(ends) if ends else None,
+            "followed": sorted((u for u in current if u["first_posted"]),
+                               key=lambda u: (u["flagged_on"], u["drug_key"])),
+            "old": {"recalled_drugs": len(old),
+                    "followed": sum(1 for u in old if u["first_posted"])}}
+
+
+def _day(d):
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def _count(n, singular, plural):
+    return f"{n:,} {singular if n == 1 else plural}"
+
+
+def _rate(row):
+    if row["rate"] is None:
+        return "not yet"
+    low, high = row["range"]
+    return f"{row['rate']:.1%} ({low:.1%} to {high:.1%})"
+
+
+def verdict_text(result):
+    """The forward test's verdict in a sentence or two."""
+    t = result["table"]
+    watch, low = t["watch"], t["low"]
+    if result["verdict"] == "too early":
+        if not sum(row["recalled_drugs"] for row in t.values()):
+            return "**Nothing to judge yet.** No recall has been flagged under the current points."
+        text = ("**Too early to judge.** A flag needs its full year before it counts, and not "
+                "enough watch and low flags have had theirs.")
+        if result["first_full_year"] and not (watch["full_year"] or low["full_year"]):
+            text += f" The first ones finish on {_day(result['first_full_year'])}."
+        return text
+    rates = f"Watch flags were followed {watch['rate']:.1%} of the time, against {low['rate']:.1%} for low"
+    return {"working": f"**The flag is working so far.** {rates}, and the 95% ranges don't overlap.",
+            "not working": f"**The flag isn't working.** {rates}, and the 95% ranges don't overlap.",
+            "can't tell": f"**Can't tell yet.** {rates}, but the 95% ranges overlap, so the "
+                          "difference could be chance."}[result["verdict"]]
+
+
+def check_report(result, unnamed, today, backtest=None):
+    """The forward test as Markdown lines."""
+    since, days = result["since"], result["days"]
+    lines = ["# Risk log check", "",
+             f"The forward test of the risk flag, checked on {_day(today)}. Every new recall is "
+             "logged with the flag it got on the day it was reported, before anyone could know "
+             "what came next, and this checks those flags against shortages of the same drug "
+             "that FDA posted afterward. Nothing here was tuned on.", "",
+             "It counts the way the backtest does: one drug in one recall event, so a pharmacy "
+             "recalling 40 drugs at once counts as 40. A drug counts as followed when FDA posts a "
+             f"shortage listing of it after the flag and within {days} days. Rates only use flags "
+             f"that have had their full {days} days, since a hit is known sooner than a miss.", "",
+             verdict_text(result), "",
+             f"## Flags under the current points, since {_day(since)}", "",
+             "| Flag | Recalled drugs | Full year done | Followed | Rate, with its 95% range "
+             "| Still in their year | Followed already |",
+             "|---|---|---|---|---|---|---|"]
+    for level in LEVELS:
+        row = result["table"][level]
+        lines.append(f"| {level} | {row['recalled_drugs']:,} | {row['full_year']:,} | "
+                     f"{row['followed']:,} | {_rate(row)} | {row['in_their_year']:,} | "
+                     f"{row['followed_already']:,} |")
+    lines.append("")
+    rates = (backtest or {}).get("rate_by_flag", {})
+    if rates.get("watch") and rates.get("low"):
+        lines += [f"For comparison, the backtest on recalls since 2020 expects about "
+                  f"{rates['watch']:.1%} for watch and {rates['low']:.1%} for low.", ""]
+    lines += ["High means the drug was already on FDA's shortage list when it was flagged, so "
+              "it's a status, not a prediction. For high, followed means another listing of the "
+              "same drug was posted after the flag.", "", "## Followed so far", ""]
+    if result["followed"]:
+        lines += ["| Drug | Flag | Flagged on | Shortage posted | Days |", "|---|---|---|---|---|"]
+        lines += [f"| {u['drug_key']} | {u['flag']} | {u['flagged_on']} | {u['first_posted']} | "
+                  f"{(u['first_posted'] - u['flagged_on']).days} |" for u in result["followed"]]
+    else:
+        lines.append("None yet.")
+    old = result["old"]
+    lines += ["", f"## Before {_day(since)}", ""]
+    if old["recalled_drugs"]:
+        lines.append(f"{_count(old['recalled_drugs'], 'recalled drug was', 'recalled drugs were')} "
+                     "flagged under the old points, which counted sterility and few makers, and "
+                     f"{_count(old['followed'], 'has', 'have')} been followed so far. They're kept "
+                     "for the record, not used to judge the current flag.")
+    else:
+        lines.append("No recall was logged under the old points.")
+    if unnamed:
+        lines += ["", f"{_count(unnamed, 'logged recall has', 'logged recalls have')} no drug name, "
+                      "so they can't be matched to a shortage of the same drug, and they're left out."]
+    return lines
+
+
+def check_log(today=None):
+    """Run the forward test on the data in DATA_DIR, and save it to audit/."""
+    for path in (RISK_PATH, LINKS_PATH, RISK_LOG_PATH):
+        if not path.exists():
+            sys.exit(f"{path} is missing. Copy the data branch in first: "
+                     "git fetch origin data, then git archive origin/data | tar -x -C data")
+    today = today or date.today()
+    units, unnamed = log_units(duckdb.connect(), RISK_PATH, LINKS_PATH, RISK_LOG_PATH)
+    result = judge_log(units, today)
+    lines = check_report(result, unnamed, today, flag_lift())
+    summary = {"checked_on": today.isoformat(), "since": result["since"].isoformat(),
+               "window_days": result["days"], "verdict": result["verdict"],
+               "first_full_year": (result["first_full_year"].isoformat()
+                                   if result["first_full_year"] else None),
+               "flags": {level: {**row, "rate": None if row["rate"] is None else round(row["rate"], 4),
+                                 "range": None if row["range"] is None
+                                 else [round(x, 4) for x in row["range"]]}
+                         for level, row in result["table"].items()},
+               "followed_so_far": len(result["followed"]), "old_points": result["old"],
+               "no_drug_name": unnamed}
+    CHECK_RESULTS.parent.mkdir(parents=True, exist_ok=True)
+    CHECK_RESULTS.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    CHECK_JSON.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    print(f"\nSaved {CHECK_RESULTS} and {CHECK_JSON.name}")
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if args[:1] == ["backtest"]:
         backtest()
+    elif args[:1] == ["check-log"]:
+        check_log()
     else:
-        sys.exit("usage: python -m shortagesignal.risk backtest")
+        sys.exit("usage: python -m shortagesignal.risk backtest | check-log")
 
 
 if __name__ == "__main__":

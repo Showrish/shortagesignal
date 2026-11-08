@@ -8,12 +8,16 @@ import pytest
 from shortagesignal.risk import (
     build_control_chart,
     build_risk,
+    check_report,
     control_limits,
     drug_labelers,
     is_injectable,
+    judge_log,
+    log_units,
     score_recall,
     score_units,
     summarize,
+    wilson,
 )
 from shortagesignal.config import ROOT
 from shortagesignal.run_sql import read_query
@@ -192,3 +196,101 @@ def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):
     assert rows == [("Sterility", 2, 1, 50.0, 100.0)]
     followed = con.execute(read_query(ROOT / "sql" / "drugs_followed.sql")).fetchall()
     assert [(r[0], r[1], r[5]) for r in followed] == [("e1", "heparin sodium", 100)]
+
+
+# ---------------------------------------------------------------- the forward test
+
+def test_wilson_gives_the_95_percent_range():
+    low, high = wilson(5, 9)
+    assert (round(low, 3), round(high, 3)) == (0.267, 0.811)
+    assert wilson(0, 10)[0] == 0.0 and round(wilson(0, 10)[1], 3) == 0.278
+    assert wilson(0, 0) is None
+
+
+def test_log_units_follows_each_drug_from_the_day_it_was_flagged(tmp_path):
+    con = duckdb.connect()
+    risk, links, log = tmp_path / "risk.parquet", tmp_path / "links.parquet", tmp_path / "risk_log.csv"
+    save(con, [
+        {"recall_number": "D-1", "event_id": "e1", "drug_key": "heparin sodium"},
+        {"recall_number": "D-2", "event_id": "e1", "drug_key": "heparin sodium"},   # same drug, same event
+        {"recall_number": "D-3", "event_id": "e2", "drug_key": "carboplatin"},
+        {"recall_number": "D-4", "event_id": "e3", "drug_key": None},               # no drug name
+        {"recall_number": "D-5", "event_id": "e4", "drug_key": "morphine sulfate"},
+        {"recall_number": "D-6", "event_id": "e5", "drug_key": "lidocaine"},
+    ], risk, tmp_path)
+    save(con, [
+        {"recall_number": "D-2", "shortage_list_type": "shortage", "shortage_posted": "12/01/2026"},
+        {"recall_number": "D-1", "shortage_list_type": "discontinuation", "shortage_posted": "11/15/2026"},
+        {"recall_number": "D-3", "shortage_list_type": "shortage", "shortage_posted": "10/01/2026"},  # before
+        {"recall_number": "D-6", "shortage_list_type": "shortage", "shortage_posted": "12/15/2027"},  # too late
+        {"recall_number": "D-5", "shortage_list_type": "shortage", "shortage_posted": "01/15/2026"},
+    ], links, tmp_path)
+    with open(log, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["recall_number", "report_date", "flagged_on", "flag", "points", "reasons"])
+        writer.writerows([["D-1", "20261020", "2026-10-27", "watch", "1", "injectable"],
+                          ["D-2", "20261021", "2026-10-28", "low", "0", ""],
+                          ["D-3", "20261020", "2026-10-27", "low", "0", ""],
+                          ["D-4", "20261020", "2026-10-27", "low", "0", ""],
+                          ["D-5", "20250925", "2025-10-01", "high", "4", "sterility, 1 labeler"],
+                          ["D-6", "20261029", "2026-10-30", "low", "0", ""]])
+
+    units, unnamed = log_units(con, risk, links, log)
+    found = {u["drug_key"]: (u["flag"], u["flagged_on"], u["first_posted"]) for u in units}
+    assert found == {
+        # one unit for D-1 and D-2: the first day either was flagged, the highest flag, and
+        # D-2's shortage counts, since a shortage happens to the drug
+        "heparin sodium": ("watch", date(2026, 10, 27), date(2026, 12, 1)),
+        "carboplatin": ("low", date(2026, 10, 27), None),        # posted before the flag
+        "lidocaine": ("low", date(2026, 10, 30), None),          # posted after the year was up
+        "morphine sulfate": ("high", date(2025, 10, 1), date(2026, 1, 15)),
+    }
+    assert unnamed == 1
+    assert log_units(con, risk, links, tmp_path / "missing.csv") == ([], 0)
+
+
+def _unit(flag, flagged_on, first_posted=None, key="a drug"):
+    return {"event_id": "e", "drug_key": key, "flag": flag, "flagged_on": flagged_on,
+            "first_posted": first_posted}
+
+
+def test_judge_log_only_counts_full_years():
+    units = [_unit("watch", date(2026, 10, 27), date(2026, 12, 1), "heparin"),
+             _unit("watch", date(2026, 11, 1), None, "carboplatin"),
+             _unit("low", date(2026, 10, 27), None, "aspirin"),
+             _unit("low", date(2027, 6, 1), date(2027, 7, 1), "lidocaine"),   # still in its year
+             _unit("watch", date(2025, 10, 1), date(2026, 1, 15), "morphine")]  # the old points
+    result = judge_log(units, date(2027, 11, 15))
+    watch, low = result["table"]["watch"], result["table"]["low"]
+    assert (watch["recalled_drugs"], watch["full_year"], watch["followed"], watch["rate"]) == (2, 2, 1, 0.5)
+    # lidocaine's early hit is listed, but it stays out of the rate until its year is up
+    assert (low["full_year"], low["followed"], low["rate"]) == (1, 0, 0.0)
+    assert (low["in_their_year"], low["followed_already"]) == (1, 1)
+    assert result["verdict"] == "can't tell"
+    assert result["old"] == {"recalled_drugs": 1, "followed": 1}
+    assert [u["drug_key"] for u in result["followed"]] == ["heparin", "lidocaine"]
+
+
+def test_judge_log_verdicts():
+    early = judge_log([_unit("watch", date(2026, 10, 27)), _unit("low", date(2026, 10, 28))],
+                      date(2026, 11, 7))
+    assert (early["verdict"], early["first_full_year"]) == ("too early", date(2027, 10, 27))
+    done = date(2027, 12, 1)
+    strong = [_unit("watch", date(2026, 11, 1), date(2026, 12, 1) if i < 25 else None, f"w{i}")
+              for i in range(50)] + [_unit("low", date(2026, 11, 1), key=f"l{i}") for i in range(50)]
+    assert judge_log(strong, done)["verdict"] == "working"
+    flipped = [dict(u, flag="low" if u["flag"] == "watch" else "watch") for u in strong]
+    assert judge_log(flipped, done)["verdict"] == "not working"
+
+
+def test_check_report_says_it_in_plain_words():
+    result = judge_log([_unit("watch", date(2026, 10, 27)), _unit("low", date(2026, 10, 28))],
+                       date(2026, 11, 7))
+    text = "\n".join(check_report(result, 1, date(2026, 11, 7),
+                                  {"rate_by_flag": {"watch": 0.019, "low": 0.009}}))
+    assert "**Too early to judge.**" in text and "The first ones finish on Oct 27, 2027." in text
+    assert "| watch | 1 | 0 | 0 | not yet | 1 | 0 |" in text
+    assert "expects about 1.9% for watch and 0.9% for low" in text
+    assert "No recall was logged under the old points." in text
+    assert "1 logged recall has no drug name" in text
+

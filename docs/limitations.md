@@ -38,7 +38,7 @@ The full results are in [ai_evals.md](ai_evals.md). In short:
 
 - **High is a status, not a prediction.** It means the drug is on FDA's shortage list right now, so the recall can make a shortage worse.
 - **Watch is a weak signal.** Injectables were followed by a shortage of the same drug 1.9% of the time, against 0.9% for everything else. Most watch flags will never lead to a shortage.
-- **The honest test hasn't happened yet.** `risk_log.csv` records each new recall's flag on the day it's given, to check against shortages that come later. It started in October 2026 and needs months before it says anything, and flags before Oct 26, 2026 used the old points.
+- **The honest test is still running.** `risk_log.csv` records each new recall's flag on the day it's given, and `python -m shortagesignal.risk check-log` checks them against shortages that come later, which the Monday digest reports too. A flag needs its full year before it counts, so the first verdict comes after Oct 26, 2027. Flags before Oct 26, 2026 used the old points and are kept apart.
 
 ## Keeping it running
 
