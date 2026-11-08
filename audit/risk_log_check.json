@@ -1,0 +1,42 @@
+{
+  "checked_on": "2026-11-08",
+  "since": "2026-10-26",
+  "window_days": 365,
+  "verdict": "too early",
+  "first_full_year": "2027-10-27",
+  "flags": {
+    "high": {
+      "recalled_drugs": 1,
+      "full_year": 0,
+      "followed": 0,
+      "rate": null,
+      "range": null,
+      "in_their_year": 1,
+      "followed_already": 0
+    },
+    "watch": {
+      "recalled_drugs": 6,
+      "full_year": 0,
+      "followed": 0,
+      "rate": null,
+      "range": null,
+      "in_their_year": 6,
+      "followed_already": 0
+    },
+    "low": {
+      "recalled_drugs": 11,
+      "full_year": 0,
+      "followed": 0,
+      "rate": null,
+      "range": null,
+      "in_their_year": 11,
+      "followed_already": 0
+    }
+  },
+  "followed_so_far": 0,
+  "old_points": {
+    "recalled_drugs": 43,
+    "followed": 0
+  },
+  "no_drug_name": 9
+}

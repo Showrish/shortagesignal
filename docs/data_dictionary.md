@@ -1,35 +1,35 @@
 # Data dictionary
 
-Every file the daily pipeline keeps, what one row means, and what each column holds. The files live on the `data` branch. This page was built from them on Nov 1, 2026 by `python -m shortagesignal.dictionary`, so the columns and types are exactly what's in the data. Run it again after the pipeline changes.
+Every file the daily pipeline keeps, what one row means, and what each column holds. The files live on the `data` branch. This page was built from them on Nov 8, 2026 by `python -m shortagesignal.dictionary`, so the columns and types are exactly what's in the data. Run it again after the pipeline changes.
 
 To query the Parquet tables, `python -m shortagesignal.run_sql` gives each one the short name in the second column. The dashboard's Ask the data tab sees simpler versions of six of them, described in `ask.py`.
 
 | File | Query it as | One row is | Rows |
 |---|---|---|---|
-| [recalls.parquet](#recallsparquet) | `recalls` | one recall number, with FDA's latest version of it | 18,047 |
-| [recall_versions.parquet](#recall_versionsparquet) | `recall_versions` | one version of a recall. A new row only when FDA changes a recall's content | 18,048 |
-| [shortage_snapshots.parquet](#shortage_snapshotsparquet) | `shortage_snapshots` | one listing on FDA's shortage or discontinuation list on one day | 33,341 |
-| [shortages_current.parquet](#shortages_currentparquet) | `shortages_current` | one listing on FDA's lists today, with every field FDA sends | 1,607 |
-| [shortage_history.parquet](#shortage_historyparquet) | `shortage_history` | one listing ever seen in the daily snapshots | 1,629 |
-| [ndc.parquet](#ndcparquet) |  | one product in FDA's NDC directory | 138,032 |
-| [ndc_directory.parquet](#ndc_directoryparquet) | `ndc_directory` | one package in the NDC directory, with codes in the pipeline's format | 256,613 |
-| [recall_ids.parquet](#recall_idsparquet) | `recall_ids` | one NDC found for a recall. A recall with no NDC still gets one row, for its firm key | 41,481 |
-| [shortage_ids.parquet](#shortage_idsparquet) | `shortage_ids` | one NDC found for a shortage listing, for every listing ever seen | 1,629 |
-| [recall_drugs.parquet](#recall_drugsparquet) | `recall_drugs` | one recall number, with the drug it's about | 18,047 |
-| [shortage_drugs.parquet](#shortage_drugsparquet) | `shortage_drugs` | one shortage listing, with its drug and company keys | 1,629 |
-| [recall_shortage_links.parquet](#recall_shortage_linksparquet) | `links` | one recall and one shortage listing of the same drug, at the strongest level that matched | 37,797 |
-| [unmatched_recalls.parquet](#unmatched_recallsparquet) | `unmatched_recalls` | one recall with no NDC and no drug name the pipeline could recognize | 3,061 |
-| [recall_root_causes.parquet](#recall_root_causesparquet) | `root_causes` | one recall number, with its root cause | 18,047 |
+| [recalls.parquet](#recallsparquet) | `recalls` | one recall number, with FDA's latest version of it | 18,075 |
+| [recall_versions.parquet](#recall_versionsparquet) | `recall_versions` | one version of a recall. A new row only when FDA changes a recall's content | 18,076 |
+| [shortage_snapshots.parquet](#shortage_snapshotsparquet) | `shortage_snapshots` | one listing on FDA's shortage or discontinuation list on one day | 44,523 |
+| [shortages_current.parquet](#shortages_currentparquet) | `shortages_current` | one listing on FDA's lists today, with every field FDA sends | 1,589 |
+| [shortage_history.parquet](#shortage_historyparquet) | `shortage_history` | one listing ever seen in the daily snapshots | 1,637 |
+| [ndc.parquet](#ndcparquet) |  | one product in FDA's NDC directory | 138,173 |
+| [ndc_directory.parquet](#ndc_directoryparquet) | `ndc_directory` | one package in the NDC directory, with codes in the pipeline's format | 256,802 |
+| [recall_ids.parquet](#recall_idsparquet) | `recall_ids` | one NDC found for a recall. A recall with no NDC still gets one row, for its firm key | 41,582 |
+| [shortage_ids.parquet](#shortage_idsparquet) | `shortage_ids` | one NDC found for a shortage listing, for every listing ever seen | 1,637 |
+| [recall_drugs.parquet](#recall_drugsparquet) | `recall_drugs` | one recall number, with the drug it's about | 18,075 |
+| [shortage_drugs.parquet](#shortage_drugsparquet) | `shortage_drugs` | one shortage listing, with its drug and company keys | 1,637 |
+| [recall_shortage_links.parquet](#recall_shortage_linksparquet) | `links` | one recall and one shortage listing of the same drug, at the strongest level that matched | 38,054 |
+| [unmatched_recalls.parquet](#unmatched_recallsparquet) | `unmatched_recalls` | one recall with no NDC and no drug name the pipeline could recognize | 2,109 |
+| [recall_root_causes.parquet](#recall_root_causesparquet) | `root_causes` | one recall number, with its root cause | 18,075 |
 | [claude_tags.parquet](#claude_tagsparquet) | `claude_tags` | one Claude answer for one recall's reason text. It's the cache, so nothing is asked twice | 600 |
 | [tag_review.csv](#tag_reviewcsv) |  | one distinct reason text Claude tagged with low or medium confidence, for a person to check | 35 |
-| [claude_drugs.parquet](#claude_drugsparquet) | `claude_drugs` | one Claude reading of one product description. It's the cache, so nothing is asked twice | 7,803 |
-| [extract_review.csv](#extract_reviewcsv) |  | one recall whose Claude drug name wasn't used, with why | 4,279 |
-| [recall_risk.parquet](#recall_riskparquet) | `recall_risk` | one recall number, with its risk flag | 18,047 |
-| [risk_log.csv](#risk_logcsv) |  | one flag given to a newly reported recall, on the day it was given | 77 |
-| [drug_makers.parquet](#drug_makersparquet) | `drug_makers` | one drug in the NDC directory, with how many companies list it | 15,493 |
-| [weekly_recalls.parquet](#weekly_recallsparquet) | `weekly_recalls` | one week, Monday to Sunday, by the week FDA reported the recalls | 749 |
-| [run_log.csv](#run_logcsv) |  | one pipeline run, whether it worked or not | 29 |
-| [check_log.csv](#check_logcsv) |  | one data check in one run | 448 |
+| [claude_drugs.parquet](#claude_drugsparquet) | `claude_drugs` | one Claude reading of one product description. It's the cache, so nothing is asked twice | 7,821 |
+| [extract_review.csv](#extract_reviewcsv) |  | one recall whose Claude drug name wasn't used, with why | 3,004 |
+| [recall_risk.parquet](#recall_riskparquet) | `recall_risk` | one recall number, with its risk flag | 18,075 |
+| [risk_log.csv](#risk_logcsv) |  | one flag given to a newly reported recall, on the day it was given | 105 |
+| [drug_makers.parquet](#drug_makersparquet) | `drug_makers` | one drug in the NDC directory, with how many companies list it | 15,485 |
+| [weekly_recalls.parquet](#weekly_recallsparquet) | `weekly_recalls` | one week, Monday to Sunday, by the week FDA reported the recalls | 750 |
+| [run_log.csv](#run_logcsv) |  | one pipeline run, whether it worked or not | 37 |
+| [check_log.csv](#check_logcsv) |  | one data check in one run | 576 |
 | [state.json](#statejson) |  | the pipeline's bookkeeping, one value per key | 1 |
 
 ## recalls.parquet
@@ -372,7 +372,7 @@ To query the Parquet tables, `python -m shortagesignal.run_sql` gives each one t
 
 ## risk_log.csv
 
-**One row is** one flag given to a newly reported recall, on the day it was given. **Made by** risk.py, step 8. Each recall is logged once, within 30 days of its report. Checking these flags against shortages that come later is the honest test of the flag. Flags before 2026-10-26 used the old points.
+**One row is** one flag given to a newly reported recall, on the day it was given. **Made by** risk.py, step 8. Each recall is logged once, within 30 days of its report. Checking these flags against shortages that come later is the honest test of the flag, which python -m shortagesignal.risk check-log runs. Flags before 2026-10-26 used the old points.
 
 | Column | Type | What it holds |
 |---|---|---|

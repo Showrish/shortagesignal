@@ -308,7 +308,8 @@ TABLES = [
      "row": "one flag given to a newly reported recall, on the day it was given",
      "made_by": "risk.py, step 8. Each recall is logged once, within 30 days of its report. "
                 "Checking these flags against shortages that come later is the honest test of "
-                "the flag. Flags before 2026-10-26 used the old points.",
+                "the flag, which python -m shortagesignal.risk check-log runs. Flags before "
+                "2026-10-26 used the old points.",
      "columns": {
          "recall_number": RECALL_COLUMNS["recall_number"],
          "report_date": RECALL_COLUMNS["report_date"],
