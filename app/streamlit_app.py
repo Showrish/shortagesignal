@@ -90,11 +90,24 @@ def sql_file(name):
     return path.read_text().strip().rstrip(";") if path.exists() else None
 
 
-def backtest_numbers():
-    """The latest risk backtest, saved by python -m shortagesignal.risk backtest."""
+def backtest_file(name):
+    """The daily run's copy of a backtest file from the data branch, or the snapshot in audit/
+    if the data branch doesn't have one yet. None if neither does."""
     try:
-        return json.loads((ROOT / "audit" / "risk_backtest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return Path(fetch(name)).read_text(encoding="utf-8")
+    except (requests.RequestException, OSError):
+        pass
+    try:
+        return (ROOT / "audit" / name).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def backtest_numbers():
+    """The latest risk backtest's numbers, worked out by every daily run."""
+    try:
+        return json.loads(backtest_file("risk_backtest.json") or "")
+    except ValueError:
         return None
 
 
@@ -313,10 +326,10 @@ with follows:
             "pct_followed": st.column_config.NumberColumn("Share", format="%.1f%%"),
             "median_days": st.column_config.NumberColumn("Median days to the shortage", format="%d"),
         })
-    backtest = ROOT / "audit" / "risk_backtest.md"
-    if backtest.exists():
+    backtest = backtest_file("risk_backtest.md")
+    if backtest:
         with st.expander("How the risk flag did on past recalls"):
-            st.markdown(backtest.read_text())
+            st.markdown(backtest)
     with st.expander("How to read this, and its limits"):
         st.markdown(
             "Each drug in each recall event is followed for a year to see whether FDA posted a "

@@ -22,9 +22,10 @@ niche or compounded products, which the shortage list rarely covers.
 
 The backtest's unit is one drug in one recall event, the same as sql/lag_by_root_cause.sql:
 a shortage happens to a drug, so the question is whether this drug went short after this
-recall. It tests the watch sign. High is a status, so it isn't backtested. Its numbers are
-also saved to audit/risk_backtest.json, which the dashboard and the weekly digest quote, so
-their numbers always match the latest backtest.
+recall. It tests the watch sign. High is a status, so it isn't backtested. Every daily run
+works it out again from the tables it just built and saves it to the data branch, as
+risk_backtest.json and risk_backtest.md, which the dashboard and the weekly digest quote, so
+their numbers are always today's. The command saves the same thing to audit/, as a snapshot.
 
 Companies are counted from the NDC directory, leaving out ones that call themselves
 repackagers or relabelers. Repackagers that don't say so still count, so common drugs come
@@ -54,6 +55,7 @@ from pathlib import Path
 import duckdb
 
 from shortagesignal.config import (
+    BACKTEST_PATH,
     LINKS_PATH,
     NDC_PATH,
     RECALLS_PATH,
@@ -298,12 +300,15 @@ def score_units(rows, labelers):
     return list(units.values())
 
 
-def flag_lift(path=BACKTEST_JSON):
-    """The latest backtest's numbers, or None before the first backtest."""
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+def flag_lift(path=None):
+    """The latest backtest's numbers: the daily run's copy if there is one, then the snapshot
+    in audit/. None before the first backtest."""
+    for candidate in ([path] if path else [BACKTEST_PATH, BACKTEST_JSON]):
+        try:
+            return json.loads(Path(candidate).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def summarize(events, group):
@@ -317,17 +322,16 @@ def summarize(events, group):
                      for k, (n, hit) in table.items()}
 
 
-def backtest():
-    from shortagesignal.run_sql import connect
-
-    for path in (NDC_PATH, RECALLS_PATH, RISK_PATH, LINKS_PATH):
-        if not path.exists():
-            sys.exit(f"{path} is missing. Copy the data branch in first: "
-                     "git fetch origin data, then git archive origin/data | tar -x -C data")
-    con = connect()
-    units = score_units(con.execute(BACKTEST_SQL).fetchall(), drug_labelers(con, NDC_PATH.as_posix()))
+def run_backtest(recalls_path, risk_path, links_path, ndc_path, today=None):
+    """(lines, summary): the backtest on these files, as Markdown lines and the numbers the
+    dashboard and the digest quote. (None, None) when there's nothing since 2020 to score."""
+    con = duckdb.connect()
+    for view, path in (("recalls", recalls_path), ("recall_risk", risk_path), ("links", links_path)):
+        con.execute(f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{Path(path).as_posix()}')")
+    units = score_units(con.execute(BACKTEST_SQL).fetchall(),
+                        drug_labelers(con, Path(ndc_path).as_posix()))
     if not units:
-        sys.exit("No recalled drugs since 2020 to score.")
+        return None, None
 
     def band(u):
         n = u["labelers"]
@@ -370,10 +374,27 @@ def backtest():
                "recalled_drugs": len(units), "followed": followed, "rate": round(overall, 4),
                "rate_by_flag": {k: round(v[2], 4) for k, v in by_flag.items()},
                "lift": {k: round(v[3], 2) for k, v in by_flag.items()},
-               "sterility_lift": round(by_cause[True][3], 2) if True in by_cause else None}
-    BACKTEST_RESULTS.parent.mkdir(parents=True, exist_ok=True)
-    BACKTEST_RESULTS.write_text("\n".join(lines), encoding="utf-8")
-    BACKTEST_JSON.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+               "sterility_lift": round(by_cause[True][3], 2) if True in by_cause else None,
+               "computed_on": (today or date.today()).isoformat()}
+    return lines, summary
+
+
+def save_backtest(lines, summary, report_path, json_path):
+    Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(report_path).write_text("\n".join(lines), encoding="utf-8")
+    Path(json_path).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+
+def backtest():
+    """The command: the backtest on DATA_DIR, printed and saved to audit/ as a snapshot."""
+    for path in (NDC_PATH, RECALLS_PATH, RISK_PATH, LINKS_PATH):
+        if not path.exists():
+            sys.exit(f"{path} is missing. Copy the data branch in first: "
+                     "git fetch origin data, then git archive origin/data | tar -x -C data")
+    lines, summary = run_backtest(RECALLS_PATH, RISK_PATH, LINKS_PATH, NDC_PATH)
+    if not lines:
+        sys.exit("No recalled drugs since 2020 to score.")
+    save_backtest(lines, summary, BACKTEST_RESULTS, BACKTEST_JSON)
     print("\n".join(lines))
     print(f"Saved {BACKTEST_RESULTS} and {BACKTEST_JSON.name}")
 

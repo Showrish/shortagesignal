@@ -1,6 +1,6 @@
 # Limitations
 
-What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Nov 2, 2026. The latest ones are in [audit/risk_backtest.md](../audit/risk_backtest.md).
+What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Nov 2, 2026. Every daily run works the backtest out again, and the dashboard shows the latest numbers.
 
 ## What the data leaves out
 

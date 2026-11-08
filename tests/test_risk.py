@@ -11,9 +11,11 @@ from shortagesignal.risk import (
     check_report,
     control_limits,
     drug_labelers,
+    flag_lift,
     is_injectable,
     judge_log,
     log_units,
+    run_backtest,
     score_recall,
     score_units,
     summarize,
@@ -196,6 +198,38 @@ def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):
     assert rows == [("Sterility", 2, 1, 50.0, 100.0)]
     followed = con.execute(read_query(ROOT / "sql" / "drugs_followed.sql")).fetchall()
     assert [(r[0], r[1], r[5]) for r in followed] == [("e1", "heparin sodium", 100)]
+
+
+def test_run_backtest_works_on_the_files_a_daily_run_builds(tmp_path):
+    con = duckdb.connect()
+    paths = {name: tmp_path / f"{name}.parquet" for name in ("recalls", "risk", "links", "ndc")}
+    save(con, [{"recall_number": "D-1", "recall_initiation_date": "20250101",
+                "product_description": "Heparin Sodium Injection, 10 mL vial"},
+               {"recall_number": "D-2", "recall_initiation_date": "20250101",
+                "product_description": "Carboplatin tablets"}], paths["recalls"], tmp_path)
+    save(con, [{"recall_number": "D-1", "event_id": "e1", "drug_key": "heparin sodium",
+                "root_cause": "Sterility"},
+               {"recall_number": "D-2", "event_id": "e1", "drug_key": "carboplatin",
+                "root_cause": "Sterility"}], paths["risk"], tmp_path)
+    save(con, [{"recall_number": "D-1", "shortage_list_type": "shortage",
+                "shortage_posted": "04/11/2025"}], paths["links"], tmp_path)
+    save(con, [{"generic_name": "Heparin Sodium", "labeler_name": "Pfizer"},
+               {"generic_name": "Carboplatin", "labeler_name": "Teyro Labs"}], paths["ndc"], tmp_path)
+
+    lines, summary = run_backtest(paths["recalls"], paths["risk"], paths["links"], paths["ndc"],
+                                  date(2026, 11, 8))
+    assert lines[0] == "# Risk flag backtest"
+    assert "| watch | 1 | 1 | 100.0% | 2.0x |" in lines           # the injectable went short
+    assert (summary["recalled_drugs"], summary["followed"], summary["rate"]) == (2, 1, 0.5)
+    assert summary["rate_by_flag"] == {"watch": 1.0, "low": 0.0}
+    assert summary["computed_on"] == "2026-11-08"
+
+
+def test_flag_lift_reads_a_saved_backtest(tmp_path):
+    path = tmp_path / "risk_backtest.json"
+    path.write_text('{"rate_by_flag": {"watch": 0.019, "low": 0.009}}', encoding="utf-8")
+    assert flag_lift(path)["rate_by_flag"]["watch"] == 0.019
+    assert flag_lift(tmp_path / "missing.json") is None
 
 
 # ---------------------------------------------------------------- the forward test
