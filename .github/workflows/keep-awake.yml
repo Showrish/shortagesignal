@@ -1,10 +1,11 @@
 name: Keep the dashboard awake
 
 # Streamlit's free tier puts the dashboard to sleep when nobody visits for a while.
-# This opens it in a headless browser every 6 hours, and wakes it up if it's asleep.
+# This opens it in a headless browser every 4 hours, wakes it if it's asleep, and fails
+# unless the dashboard itself loads. A screenshot of what it saw is kept with each run.
 on:
   schedule:
-    - cron: "17 */6 * * *"   # every 6 hours, at 17 past, away from the daily run on the hour
+    - cron: "17 */4 * * *"   # every 4 hours, at 17 past, away from the daily run on the hour
   workflow_dispatch:
 
 permissions:
@@ -13,7 +14,7 @@ permissions:
 jobs:
   visit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -28,3 +29,12 @@ jobs:
 
       - name: Visit the dashboard
         run: python scripts/keep_awake.py
+
+      - name: Keep the screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keep-awake-${{ github.run_id }}
+          path: keep_awake.png
+          retention-days: 7
+          if-no-files-found: ignore
