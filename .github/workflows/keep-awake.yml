@@ -22,12 +22,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install a headless browser
+      # Playwright drives the Google Chrome that GitHub's runners already have, so nothing
+      # is installed with apt, the step that once failed when the runner couldn't reach
+      # Ubuntu's package servers. Only if a runner ever lacks Chrome does it fetch
+      # Playwright's own Chromium, still without apt, since the runner has its libraries.
+      - name: Install Playwright
+        timeout-minutes: 5
         run: |
           pip install playwright==1.47.0
-          python -m playwright install --with-deps chromium
+          google-chrome --version || python -m playwright install chromium
 
       - name: Visit the dashboard
+        timeout-minutes: 8
         run: python scripts/keep_awake.py
 
       - name: Keep the screenshot
