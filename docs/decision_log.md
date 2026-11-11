@@ -308,3 +308,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** the keep-awake visit now finds the wake button by its text in the page or any iframe, and only passes when the dashboard's own Risk flags tab shows up. Every run keeps a screenshot of what it saw. It runs every 4 hours instead of 6.
 - **Why:** the dashboard was found asleep with the workflow in place. The first version looked for a button with one exact label, and treated not finding it as the app being awake, so when the sleep page didn't match, it passed without waking anything and nobody found out. Checking for the app's own content turns that silent pass into a failed run and an email. 4 hours leaves room for GitHub's scheduled runs, which can start late or get skipped when GitHub is busy.
 - **Passed on:** trusting that no wake button means the app is awake, which is how it failed
+
+## 2026-11-11: keep-awake uses the Chrome already on the runner
+- **Chose:** keep-awake drives the Google Chrome that GitHub's Ubuntu runners come with, instead of downloading Playwright's own Chromium and its system packages on every run. The install and visit steps each have their own time limit, so a stuck step fails in minutes with a clear reason.
+- **Why:** a run failed after about 10 minutes on installing the browser, before it ever visited the dashboard. Its log showed apt failing to reach Ubuntu's package servers, so Playwright's system packages never installed. Installing a browser and its packages every 4 hours was the fragile part, and the runners already have Chrome. If one ever doesn't, the workflow fetches Playwright's Chromium without apt.
+- **Passed on:** caching the downloaded browser between runs, which keeps the moving part instead of removing it
