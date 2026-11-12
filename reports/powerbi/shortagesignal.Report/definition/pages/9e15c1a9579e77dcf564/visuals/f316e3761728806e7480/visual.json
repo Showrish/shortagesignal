@@ -53,21 +53,6 @@
                       "Entity": "recall_risk"
                     }
                   },
-                  "Property": "points"
-                }
-              },
-              "queryRef": "recall_risk.points",
-              "nativeQueryRef": "points",
-              "displayName": "Points"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "recall_risk"
-                    }
-                  },
                   "Property": "drug_key"
                 }
               },
@@ -133,10 +118,10 @@
                     "Entity": "recall_risk"
                   }
                 },
-                "Property": "points"
+                "Property": "flag"
               }
             },
-            "direction": "Descending"
+            "direction": "Ascending"
           },
           {
             "field": {
@@ -322,21 +307,7 @@
             "value": {
               "expr": {
                 "Literal": {
-                  "Value": "56D"
-                }
-              }
-            }
-          },
-          "selector": {
-            "metadata": "recall_risk.points"
-          }
-        },
-        {
-          "properties": {
-            "value": {
-              "expr": {
-                "Literal": {
-                  "Value": "210D"
+                  "Value": "266D"
                 }
               }
             }

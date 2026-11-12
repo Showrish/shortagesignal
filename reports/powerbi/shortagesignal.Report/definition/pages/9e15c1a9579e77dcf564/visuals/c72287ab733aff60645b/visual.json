@@ -79,27 +79,13 @@
               "solid": {
                 "color": {
                   "expr": {
-                    "Measure": {
-                      "Expression": {
-                        "SourceRef": {
-                          "Entity": "recall_risk"
-                        }
-                      },
-                      "Property": "Bar color"
+                    "Literal": {
+                      "Value": "'#2E6FD8'"
                     }
                   }
                 }
               }
             }
-          },
-          "selector": {
-            "data": [
-              {
-                "dataViewWildcard": {
-                  "matchingOption": 1
-                }
-              }
-            ]
           }
         }
       ],
@@ -346,7 +332,7 @@
             "altText": {
               "expr": {
                 "Literal": {
-                  "Value": "'Bar chart of the 8 root causes with the most recall events, with sterility in red'"
+                  "Value": "'Bar chart of the 8 root causes with the most recall events'"
                 }
               }
             }
