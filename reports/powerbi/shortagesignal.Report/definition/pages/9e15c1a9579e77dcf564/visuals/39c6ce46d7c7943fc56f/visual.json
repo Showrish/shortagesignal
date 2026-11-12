@@ -19,7 +19,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Daily pipeline on openFDA data, refreshed from GitHub. Flags are a watch list, not predictions.",
+                    "value": "High: the drug is already short. Watch: an injectable. Low: neither. A watch list, not predictions.",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "11pt",

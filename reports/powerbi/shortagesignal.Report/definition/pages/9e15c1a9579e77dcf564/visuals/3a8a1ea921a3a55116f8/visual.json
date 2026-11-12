@@ -23,12 +23,12 @@
                       "Entity": "recall_risk"
                     }
                   },
-                  "Property": "High flags"
+                  "Property": "Flagged, last 90 days"
                 }
               },
-              "queryRef": "recall_risk.High flags",
-              "nativeQueryRef": "High flags",
-              "displayName": "High flags"
+              "queryRef": "recall_risk.Flagged, last 90 days",
+              "nativeQueryRef": "Flagged, last 90 days",
+              "displayName": "Flagged, last 90 days"
             }
           ]
         }
@@ -50,7 +50,7 @@
                 "color": {
                   "expr": {
                     "Literal": {
-                      "Value": "'#D64545'"
+                      "Value": "'#E8913A'"
                     }
                   }
                 }
@@ -58,7 +58,7 @@
             }
           },
           "selector": {
-            "metadata": "recall_risk.High flags"
+            "metadata": "recall_risk.Flagged, last 90 days"
           }
         }
       ],
@@ -85,7 +85,7 @@
             }
           },
           "selector": {
-            "metadata": "recall_risk.High flags"
+            "metadata": "recall_risk.Flagged, last 90 days"
           }
         }
       ]
@@ -196,7 +196,7 @@
             "altText": {
               "expr": {
                 "Literal": {
-                  "Value": "'High flags card'"
+                  "Value": "'Card with the high and watch flags from the last 90 days'"
                 }
               }
             }

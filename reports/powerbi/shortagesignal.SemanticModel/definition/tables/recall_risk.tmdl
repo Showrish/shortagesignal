@@ -1,9 +1,6 @@
 table recall_risk
 	lineageTag: 1beedf05-1e33-4d04-9e7d-02a10d84e7d6
 
-	measure 'Bar color' = IF(SELECTEDVALUE(recall_risk[root_cause]) = "Sterility", "#D64545", "#8C8C8C")
-		lineageTag: d0d2a15a-63dc-4e26-b471-c9d94eb9b1a7
-
 	measure 'Flag color' = SWITCH(SELECTEDVALUE(recall_risk[flag]), "high", "#FDE2E2", "watch", "#FEF0C7", "#FFFFFF")
 		lineageTag: fe4e48cc-320f-4751-b43e-60c664db206c
 
@@ -22,6 +19,10 @@ table recall_risk
 	measure 'Watch flags' = CALCULATE([Recalls], recall_risk[flag] = "watch")
 		formatString: #,0
 		lineageTag: 41804115-dfc0-461e-936d-ee2b9544c55d
+
+	measure 'Flagged, last 90 days' = CALCULATE([Recalls], recall_risk[in_last_90_days] = TRUE(), recall_risk[flag] IN {"high", "watch"})
+		formatString: #,0
+		lineageTag: 20ee8aff-e7a0-4a87-a04d-5dd1146bd35b
 
 	measure 'Linked recalls' = DISTINCTCOUNT(links[recall_number])
 		formatString: #,0

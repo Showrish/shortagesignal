@@ -313,3 +313,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** keep-awake drives the Google Chrome that GitHub's Ubuntu runners come with, instead of downloading Playwright's own Chromium and its system packages on every run. The install and visit steps each have their own time limit, so a stuck step fails in minutes with a clear reason.
 - **Why:** a run failed after about 10 minutes on installing the browser, before it ever visited the dashboard. Its log showed apt failing to reach Ubuntu's package servers, so Playwright's system packages never installed. Installing a browser and its packages every 4 hours was the fragile part, and the runners already have Chrome. If one ever doesn't, the workflow fetches Playwright's Chromium without apt.
 - **Passed on:** caching the downloaded browser between runs, which keeps the moving part instead of removing it
+
+## 2026-11-11: the Power BI report follows the new flag
+- **Chose:** the report drops the Points column, swaps the all-time High flags card for the high and watch flags from the last 90 days, the same rows its table shows, draws the root-cause bars in one color, and says what each flag means in its subtitle. Its screenshot is at the top of the README.
+- **Why:** it still showed the old flag. Points only repeats the flag now, the all-time high count mixed old and new points, and the red Sterility bar pointed at a sign the drug-level analysis dropped.
+- **Passed on:** a new chart of the backtest's rates, which the dashboard already shows and which would need another query in the report
