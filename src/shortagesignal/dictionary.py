@@ -346,14 +346,27 @@ TABLES = [
                 "risk_backtest.md next to it has the full tables.",
      "columns": {
          "unit": "What one recalled drug means here: one drug in one recall event.",
-         "since": "The first recall date it counts.",
+         "since": "The first report date it counts.",
          "recalled_drugs": "How many recalled drugs it scored.",
-         "followed": "How many were followed within a year by a shortage of the same drug.",
+         "followed": "How many were followed within a year by a shortage of the same drug, "
+                     "under the primary definition.",
          "rate": "followed divided by recalled_drugs.",
-         "rate_by_flag": "The rate for watch flags and for low ones.",
-         "lift": "Each flag's rate divided by the overall rate.",
+         "rate_by_flag": "The rate for watch flags and for low ones, under the primary definition.",
+         "lift": "The watch rate divided by the overall rate.",
          "sterility_lift": "The rate for sterility recalls divided by the overall rate.",
          "computed_on": "The day it was worked out.",
+         "window": "When a shortage counts: after the recall's report date and within 365 days.",
+         "cohort_end": "The last report date counted. Newer recalls wait until their year is up.",
+         "waiting_for_full_year": "Recalled drugs left out because their year isn't up yet.",
+         "primary": "The definition of the same drug the headline numbers use: same_route.",
+         "definitions": "The followed count, rates and share caught under each definition: "
+                        "any_link, same_route and same_company.",
+         "baselines": "The watch flag against flagging every recall: how many are flagged, "
+                      "precision, share caught, share of the review work and flags per week.",
+         "lead_days": "Days from the report to the first shortage, for watch flags that were "
+                      "followed: the median and the middle half.",
+         "caveat": "What these numbers can't fix: FDA's feed drops resolved shortages, so older "
+                   "years are undercounted.",
      }},
     {"file": "run_log.csv", "name": None,
      "row": "one pipeline run, whether it worked or not",

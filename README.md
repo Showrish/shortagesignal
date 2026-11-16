@@ -8,14 +8,14 @@ A daily, automated pipeline on real FDA data that links drug recalls to drug sho
 
 ## What it found
 
-As of Nov 2, 2026. The dashboard always has the latest numbers.
+As of Nov 16, 2026, on drugs reported in a recall from 2020 to Nov 2025 that have had a full year since their report, counting each drug in each recall event once. The dashboard always has the latest numbers. They describe this dataset, not every shortage: FDA's feed drops resolved shortages after a while, so older years are undercounted.
 
-- **Shortages after a recall are rare.** Of 3,639 drugs recalled since 2020, counting each drug in each recall event once, 45 (1.2%) were followed within a year by a shortage of the same drug that FDA still lists.
-- **Injectables are the one sign that held up.** 1.9% of recalled injectables went short within a year, against 0.9% of everything else, and the gap shows up in both 2020-22 and 2023 on.
-- **Sterility problems add nothing once injectables are accounted for.** Sterile injectables and other injectables both come in at 1.9%. Sterility only looked strong because most sterility recalls are injectables.
-- **Drugs with few makers went short less often, not more.** The drugs only 1 or 2 companies list are mostly niche or compounded products, which FDA's shortage list rarely covers.
-- **Followed doesn't mean caused.** 32 of the 45 rest on the loosest link, the same drug from any company, and 5 drugs that run short again and again, like fentanyl and atropine, make up 20 of them.
-- **An earlier version got this wrong.** Counting recall events instead of drugs made sterility look 3 times riskier than average, and the first risk flag 4 times. Counting each drug on its own cut sterility to about 1.3 times, and that flag's high level to zero. The [decision log](docs/decision_log.md) has how it was caught and what changed.
+- **Shortages after a recall are rare.** 27 recalled drugs (0.9%) were followed within that year by a shortage of the same drug given the same way, and 41 (1.2%) if any listing with the same drug name counts.
+- **Injectables are the one sign that held up.** 1.7% of recalled injectables were followed by a shortage of the same route, against 0.4% of other recalls whose route can be read. Watch flags caught 20 of the 27 for 40% of the review work, about 4 flags a week, and the gap shows up in both 2020-22 and 2023 on.
+- **The warning comes months ahead.** For watch flags that were followed, the shortage was posted a median of 154 days after the recall's report.
+- **Sterility problems add nothing once injectables are accounted for.** Sterile injectables came in at 1.4%, against 2.2% for other injectables. Sterility only looked strong because most sterility recalls are injectables.
+- **Followed doesn't mean caused.** Only 4 outcomes were the same company's product, so a recall rarely becomes that company's own shortage. A recalled injectable is more a marker of a fragile drug than a cause.
+- **The first versions overstated it.** Counting recall events instead of drugs made sterility look 3 times riskier than average, and starting each year when the firm began the recall, weeks before FDA reported it, counted shortages no flag could have seen. The [decision log](docs/decision_log.md) has how each was caught.
 
 ## What it does
 

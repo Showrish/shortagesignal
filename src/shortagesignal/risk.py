@@ -22,10 +22,26 @@ niche or compounded products, which the shortage list rarely covers.
 
 The backtest's unit is one drug in one recall event, the same as sql/lag_by_root_cause.sql:
 a shortage happens to a drug, so the question is whether this drug went short after this
-recall. It tests the watch sign. High is a status, so it isn't backtested. Every daily run
-works it out again from the tables it just built and saves it to the data branch, as
-risk_backtest.json and risk_backtest.md, which the dashboard and the weekly digest quote, so
-their numbers are always today's. The command saves the same thing to audit/, as a snapshot.
+recall. It tests the watch sign. High is a status, so it isn't backtested. It's built to
+avoid flattering the flag:
+  - The year starts on the recall's report date, the first day a flag could exist, not the
+    day the firm started the recall. A shortage posted in between was already known when
+    the flag could have been given.
+  - Only recalls with a full year after their report count. A newer one can still be
+    followed, so counting it as a miss would pull every rate down.
+  - "Followed" is counted three ways, from loose to strict: any link (the same drug name),
+    the same route (the same drug given the same way, like injectable or oral, which is
+    the primary definition) and the same company. Most outcomes rest on drug-only links,
+    which can join an injection recall to a patch shortage.
+  - The watch flag is compared with flagging every recall and flagging none, on precision,
+    the share of outcomes it catches, the review work and how far ahead it flagged.
+  - The split by period is a consistency check, not a holdout, since the injectable rule
+    was chosen using all those years. The forward test below is the clean test.
+None of that fixes missing history: FDA's feed drops resolved shortages after a while, so
+older years are still undercounted, and the report says so next to its numbers. Every daily
+run works it out again from the tables it just built and saves it to the data branch, as
+risk_backtest.json and risk_backtest.md, which the dashboard and the weekly digest quote. The
+command saves the same thing to audit/, as a snapshot.
 
 Companies are counted from the NDC directory, leaving out ones that call themselves
 repackagers or relabelers. Repackagers that don't say so still count, so common drugs come
@@ -58,10 +74,13 @@ from shortagesignal.config import (
     BACKTEST_PATH,
     LINKS_PATH,
     NDC_PATH,
+    RECALL_IDS_PATH,
     RECALLS_PATH,
     RISK_LOG_PATH,
     RISK_PATH,
     ROOT,
+    SHORTAGE_DRUGS_PATH,
+    SNAPSHOTS_PATH,
 )
 from shortagesignal.drugs import drug_key
 from shortagesignal.firms import firm_key
@@ -256,48 +275,148 @@ def build_control_chart(recalls_path, weekly_path, workdir, today, baseline_week
 
 # ---------------------------------------------------------------- the backtest
 
-BACKTEST_SQL = """
-WITH units AS (
-    SELECT k.event_id, k.drug_key,
-           MIN(TRY_STRPTIME(r.recall_initiation_date, '%Y%m%d'))::DATE AS recall_date,
-           MODE(k.root_cause) AS root_cause
-    FROM recall_risk AS k
-    INNER JOIN recalls AS r ON r.recall_number = k.recall_number
-    WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
-    GROUP BY k.event_id, k.drug_key
-),
-followed AS (
-    SELECT DISTINCT u.event_id, u.drug_key
-    FROM units AS u
-    INNER JOIN recall_risk AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
-    INNER JOIN links AS l ON l.recall_number = k.recall_number
-    WHERE l.shortage_list_type = 'shortage'
-      AND TRY_STRPTIME(l.shortage_posted, '%m/%d/%Y')::DATE
-          BETWEEN u.recall_date AND u.recall_date + INTERVAL 365 DAY
-)
-SELECT u.event_id, u.drug_key, u.root_cause, f.event_id IS NOT NULL AS was_followed,
-       r.product_description
-FROM units AS u
-INNER JOIN recall_risk AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
+SINCE = date(2020, 1, 1)
+PRIMARY = "same_route"
+DEFINITIONS = {
+    "any_link": "Any link: the same drug name",
+    "same_route": "Same route: the same drug given the same way (primary)",
+    "same_company": "Same company: the same drug from the same company",
+}
+MISSING_HISTORY = ("Counting only recalls with a full year after their report fixes incomplete "
+                   "follow-up, not missing history. FDA's feed drops resolved shortages after a "
+                   "while, so older years are still undercounted, and these numbers describe this "
+                   "dataset, not every shortage.")
+ROUTES = [   # the first match wins, so eye drops in vials come out ophthalmic, not injectable
+    ("ophthalmic", re.compile(r"ophthalm|\beyes?\b", re.I)),
+    ("otic", re.compile(r"\botic\b|\bears?\b", re.I)),
+    ("nasal", re.compile(r"nasal", re.I)),
+    ("inhaled", re.compile(r"inhal|nebuli", re.I)),
+    ("injectable", re.compile(r"inject|syringe|infusion|intraven|intramuscular|subcutaneous|ampul"
+                              r"|\bi\.?v\.?\b|\bvials?\b", re.I)),
+    ("transdermal", re.compile(r"transdermal|\bpatch", re.I)),
+    ("rectal or vaginal", re.compile(r"rectal|vaginal|suppositor|enema", re.I)),
+    ("topical", re.compile(r"topical|cream|ointment|\bgel\b|lotion|\bfoam\b|shampoo", re.I)),
+    ("oral", re.compile(r"\boral|tablet|capsule|caplet|chewable|syrup|elixir|lozenge|\bdrops?\b", re.I)),
+]
+
+UNITS_SQL = """
+SELECT k.event_id, k.drug_key,
+       MIN(TRY_STRPTIME(k.report_date, '%Y%m%d'))::DATE AS reported,
+       MODE(k.root_cause) AS root_cause,
+       list(DISTINCT k.recall_number) AS recall_numbers,
+       list(DISTINCT r.product_description) AS products
+FROM recall_risk AS k
 INNER JOIN recalls AS r ON r.recall_number = k.recall_number
-LEFT JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
-WHERE u.recall_date >= DATE '2020-01-01'
+WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
+GROUP BY k.event_id, k.drug_key
 """
 
+SHORTAGE_LINKS_SQL = """
+SELECT l.recall_number, TRY_STRPTIME(l.shortage_posted, '%m/%d/%Y')::DATE AS posted,
+       d.firm_key, s.dosage_form, s.presentation, s.generic_name
+FROM links AS l
+LEFT JOIN shortage_drugs AS d ON d.shortage_key = l.shortage_key
+LEFT JOIN (SELECT shortage_key, arg_max(dosage_form, snapshot_date) AS dosage_form,
+                  arg_max(presentation, snapshot_date) AS presentation,
+                  arg_max(generic_name, snapshot_date) AS generic_name
+           FROM snapshots GROUP BY shortage_key) AS s ON s.shortage_key = l.shortage_key
+WHERE l.shortage_list_type = 'shortage'
+"""
 
-def score_units(rows, labelers):
-    """One row per drug in each recall event, with the watch sign (any of its recalled products
-    is an injectable) and the two dropped signs, the root cause and how many companies make it.
-    High is a status at the time of the recall, which the past doesn't record, so the backtest
-    scores each unit as if it weren't short yet."""
-    units = {}
-    for event_id, key, root_cause, was_followed, description in rows:
-        u = units.setdefault((event_id, key), {"root_cause": root_cause, "followed": bool(was_followed),
-                                               "labelers": labelers.get(key), "injectable": False})
-        u["injectable"] = u["injectable"] or is_injectable(description)
-    for u in units.values():
-        u["points"], u["flag"], _ = score_recall(False, u["injectable"])
-    return list(units.values())
+RECALL_FIRMS_SQL = "SELECT recall_number, any_value(firm_key) FROM recall_ids GROUP BY recall_number"
+
+
+def route_of(text):
+    """How a product is given, read from its text: injectable, oral, topical, ophthalmic and
+    so on. None when the text doesn't say."""
+    for route, pattern in ROUTES:
+        if text and pattern.search(text):
+            return route
+    return None
+
+
+def backtest_units(con, labelers, today, days=FOLLOW_DAYS):
+    """One dict per drug in each recall event reported since 2020: its watch sign, the dropped
+    signs, whether it has had a full year after its report, and, for each definition of the
+    same drug, the first shortage of it posted in that year."""
+    firms = dict(con.execute(RECALL_FIRMS_SQL).fetchall())
+    shortages = defaultdict(list)
+    for number, posted, firm, form, presentation, name in con.execute(SHORTAGE_LINKS_SQL).fetchall():
+        if posted:
+            shortages[number].append((posted, firm, route_of(" ".join(filter(None, (form, presentation, name))))))
+    units = []
+    for event_id, key, reported, root_cause, numbers, products in con.execute(UNITS_SQL).fetchall():
+        if reported is None or reported < SINCE:
+            continue
+        products = [p for p in products if p]
+        routes = {route_of(p) for p in products} - {None}
+        companies = {firms.get(n) for n in numbers} - {None}
+        end = reported + timedelta(days=days)
+        first = dict.fromkeys(DEFINITIONS)
+        unread = False          # a link in the year to a shortage whose route can't be read
+        for number in numbers:
+            for posted, firm, route in shortages.get(number, []):
+                if not reported < posted <= end:     # only after the report, within the year
+                    continue
+                unread = unread or route is None
+                matches = {"any_link": True, "same_route": route is not None and route in routes,
+                           "same_company": firm is not None and firm in companies}
+                for definition, matched in matches.items():
+                    if matched and (first[definition] is None or posted < first[definition]):
+                        first[definition] = posted
+        injectable = any(is_injectable(p) for p in products)
+        units.append({"event_id": event_id, "drug_key": key, "reported": reported,
+                      "root_cause": root_cause, "labelers": labelers.get(key),
+                      "injectable": injectable, "flag": score_recall(False, injectable)[1],
+                      "route_known": bool(routes), "full_year": end <= today, "first": first,
+                      "unread_shortage_route": unread and not first["same_route"]})
+    return units
+
+
+def _quartiles(values):
+    if not values:
+        return None
+    values = sorted(values)
+    pick = lambda q: values[min(len(values) - 1, int(q * (len(values) - 1) + 0.5))]  # noqa: E731
+    return {"median": pick(0.5), "p25": pick(0.25), "p75": pick(0.75)}
+
+
+def counted(cohort, definition):
+    """The recalled drugs a definition can judge. Same route needs the recall's route, so the
+    ones whose text doesn't say are left out, rather than counted as never followed."""
+    return [u for u in cohort if u["route_known"]] if definition == "same_route" else cohort
+
+
+def score_definition(cohort, definition, weeks):
+    """Precision, capture, workload, lift and lead time of the watch flag under one definition."""
+    cohort = counted(cohort, definition)
+    followed = [u for u in cohort if u["first"][definition]]
+    watch = [u for u in cohort if u["flag"] == "watch"]
+    low = [u for u in cohort if u["flag"] == "low"]
+    watch_hit = sum(1 for u in watch if u["first"][definition])
+    low_hit = sum(1 for u in low if u["first"][definition])
+    rate = len(followed) / len(cohort)
+    watch_rate = watch_hit / len(watch) if watch else None
+    return {"counted": len(cohort), "followed": len(followed), "rate": rate,
+            "range": wilson(len(followed), len(cohort)),
+            "watch": len(watch), "watch_followed": watch_hit, "watch_rate": watch_rate,
+            "watch_range": wilson(watch_hit, len(watch)),
+            "low": len(low), "low_followed": low_hit,
+            "low_rate": low_hit / len(low) if low else None,
+            "capture": watch_hit / len(followed) if followed else None,
+            "workload": len(watch) / len(cohort), "watch_per_week": len(watch) / weeks,
+            "all_per_week": len(cohort) / weeks,
+            "lift": watch_rate / rate if watch_rate is not None and rate else None,
+            "lead_days": _quartiles([(u["first"][definition] - u["reported"]).days
+                                     for u in watch if u["first"][definition]])}
+
+
+def _pct(x):
+    return "n/a" if x is None else f"{x:.1%}"
+
+
+def _with_range(rate, rng):
+    return "n/a" if rate is None else f"{rate:.1%} ({rng[0]:.1%} to {rng[1]:.1%})"
 
 
 def flag_lift(path=None):
@@ -322,16 +441,86 @@ def summarize(events, group):
                      for k, (n, hit) in table.items()}
 
 
-def run_backtest(recalls_path, risk_path, links_path, ndc_path, today=None):
-    """(lines, summary): the backtest on these files, as Markdown lines and the numbers the
-    dashboard and the digest quote. (None, None) when there's nothing since 2020 to score."""
+def run_backtest(paths, today=None):
+    """(lines, summary): the backtest as Markdown lines and the numbers the dashboard and the
+    digest quote. paths maps recalls, risk, links, ndc, recall_ids, shortage_drugs and
+    snapshots to their files. (None, None) when no recall has had its full year yet."""
+    today = today or date.today()
     con = duckdb.connect()
-    for view, path in (("recalls", recalls_path), ("recall_risk", risk_path), ("links", links_path)):
-        con.execute(f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{Path(path).as_posix()}')")
-    units = score_units(con.execute(BACKTEST_SQL).fetchall(),
-                        drug_labelers(con, Path(ndc_path).as_posix()))
-    if not units:
+    for view, name in (("recalls", "recalls"), ("recall_risk", "risk"), ("links", "links"),
+                       ("recall_ids", "recall_ids"), ("shortage_drugs", "shortage_drugs"),
+                       ("snapshots", "snapshots")):
+        con.execute(f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{Path(paths[name]).as_posix()}')")
+    units = backtest_units(con, drug_labelers(con, Path(paths["ndc"]).as_posix()), today)
+    cohort = [u for u in units if u["full_year"]]
+    if not cohort:
         return None, None
+    waiting = len(units) - len(cohort)
+    first_day, last_day = min(u["reported"] for u in cohort), max(u["reported"] for u in cohort)
+    weeks = max(1.0, ((last_day - first_day).days + 1) / 7)
+    scores = {d: score_definition(cohort, d, weeks) for d in DEFINITIONS}
+    primary = scores[PRIMARY]
+    judged = counted(cohort, PRIMARY)           # the recalled drugs the headline can judge
+    for u in judged:
+        u["followed"] = bool(u["first"][PRIMARY])
+
+    lines = ["# Risk flag backtest", "",
+             f"Drugs reported in a recall from {_day(first_day)} to {_day(last_day)}: "
+             f"{len(cohort):,}, counting each drug in each recall event once. Each one's year "
+             "starts on its report date, the first day a flag could exist, and only recalls with "
+             f"a full year since are counted, which leaves out {waiting:,} newer ones for now.", "",
+             f"**{MISSING_HISTORY}**", "",
+             "The watch flag means an injectable. High means the drug was already short, a status "
+             "rather than a prediction, so it isn't backtested here. The signs were chosen by "
+             "looking at this same data, so these numbers are optimistic. The honest test is the "
+             "forward test on risk_log.csv.", "",
+             "## What counts as the same drug going short", "",
+             "| Definition | Recalled drugs judged | Followed | Rate, with its 95% range | Watch | Low "
+             "| Lift | Watch catches |",
+             "|---|---|---|---|---|---|---|---|"]
+    for d, label in DEFINITIONS.items():
+        s = scores[d]
+        lift = "n/a" if s["lift"] is None else f"{s['lift']:.1f}x"
+        lines.append(f"| {label} | {s['counted']:,} | {s['followed']:,} | "
+                     f"{_with_range(s['rate'], s['range'])} | {_pct(s['watch_rate'])} | "
+                     f"{_pct(s['low_rate'])} | {lift} | {_pct(s['capture'])} |")
+    unknown = len(cohort) - len(judged)
+    unread = sum(1 for u in judged if u["unread_shortage_route"])
+    lines += ["", f"Of {scores['any_link']['followed']:,} recalled drugs followed through any link, "
+                  f"{scores['same_route']['followed']:,} were followed by a shortage of the same "
+                  f"route and {scores['same_company']['followed']:,} by one from the same company. "
+                  f"The route couldn't be read from the recall for {unknown:,} recalled drugs, so the "
+                  f"same-route numbers leave them out rather than count them as never followed. "
+                  f"Another {unread:,} were linked in their year only to shortage listings whose "
+                  "route couldn't be read, so same route may miss a few real outcomes. Same company "
+                  "compares cleaned company names, so a subsidiary and its parent count as different "
+                  "companies, which makes it a lower bound.", "",
+              f"## The watch flag against the simplest choices, same route, on the {len(judged):,} "
+              "recalled drugs whose route can be read", "",
+              "| Approach | Recalled drugs flagged | Share of the review work | Flags per week "
+              "| Precision | Outcomes caught |", "|---|---|---|---|---|---|",
+              f"| Flag none | 0 | 0% | 0 | n/a | 0 of {primary['followed']:,} |",
+              f"| Flag every recall | {len(judged):,} | 100% | {primary['all_per_week']:.1f} | "
+              f"{_with_range(primary['rate'], primary['range'])} | {primary['followed']:,} of "
+              f"{primary['followed']:,} |",
+              f"| Watch: an injectable | {primary['watch']:,} | {_pct(primary['workload'])} | "
+              f"{primary['watch_per_week']:.1f} | {_with_range(primary['watch_rate'], primary['watch_range'])} "
+              f"| {primary['watch_followed']:,} of {primary['followed']:,} |", ""]
+    if primary["lead_days"]:
+        q = primary["lead_days"]
+        lines += [f"For watch flags that were followed, the shortage was posted a median of "
+                  f"{q['median']} days after the recall was reported, and the middle half took "
+                  f"{q['p25']} to {q['p75']} days.", ""]
+    lines += ["## Consistency over time, same route", "",
+              "Not a holdout: the injectable rule was chosen looking at all of these years.", "",
+              "| Reported | Recalled drugs | Watch | Low |", "|---|---|---|---|"]
+    for label, keep in (("2020 to 2022", lambda u: u["reported"].year <= 2022),
+                        ("2023 on", lambda u: u["reported"].year >= 2023)):
+        part = [u for u in judged if keep(u)]
+        if part:
+            s = score_definition(part, PRIMARY, weeks)
+            lines.append(f"| {label} | {len(part):,} | {_pct(s['watch_rate'])} | {_pct(s['low_rate'])} |")
+    lines.append("")
 
     def band(u):
         n = u["labelers"]
@@ -343,39 +532,44 @@ def run_backtest(recalls_path, risk_path, links_path, ndc_path, today=None):
                 + ("injectable" if u["injectable"] else "not injectable"))
 
     combos = [f"{c}, {f}" for c in ("sterility", "other cause") for f in ("injectable", "not injectable")]
-    sections = [("Flag: watch is an injectable", lambda u: u["flag"], ["watch", "low"]),
-                ("Dropped: root cause is Sterility",
-                 lambda u: "yes" if u["root_cause"] == "Sterility" else "no", ["yes", "no"]),
-                ("Why Sterility was dropped: it adds nothing within injectables", cause_and_form, combos),
-                ("Dropped: companies that make the drug", band,
-                 ["1 or 2", "3 to 5", "6 or more", "not in the NDC directory"])]
-    followed = sum(u["followed"] for u in units)
-    overall = followed / len(units)
-    lines = ["# Risk flag backtest", "",
-             f"Drugs recalled since 2020: {len(units):,}, counting each drug in each recall event "
-             f"once. Followed within a year by a shortage of the same drug that FDA still lists: "
-             f"{followed:,} ({overall:.1%}). Lift is each group's rate divided by that average.", "",
-             "High means the recalled drug is on FDA's shortage list right now. That's a status, "
-             "not a prediction, so it isn't backtested here. Watch means an injectable. The signs "
-             "were chosen by looking at this same data, so these numbers are optimistic. The "
-             "honest test is risk_log.csv: flags given on the day a recall was reported, checked "
-             "against shortages that come later.", ""]
-    for title, group, order in sections:
-        _, table = summarize(units, group)
-        lines += [f"## {title}", "", "| | Recalled drugs | Followed | Rate | Lift |", "|---|---|---|---|---|"]
+    for title, group, order in [
+            ("Dropped: root cause is Sterility",
+             lambda u: "yes" if u["root_cause"] == "Sterility" else "no", ["yes", "no"]),
+            ("Why Sterility was dropped: it adds nothing within injectables", cause_and_form, combos),
+            ("Dropped: companies that make the drug", band,
+             ["1 or 2", "3 to 5", "6 or more", "not in the NDC directory"])]:
+        _, table = summarize(judged, group)
+        lines += [f"## {title}, same route", "", "| | Recalled drugs | Followed | Rate | Lift |",
+                  "|---|---|---|---|---|"]
         for key in order:
             if key in table:
                 n, hit, rate, lift = table[key]
                 lines.append(f"| {key} | {n:,} | {hit:,} | {rate:.1%} | {lift:.1f}x |")
         lines.append("")
-    _, by_flag = summarize(units, lambda u: u["flag"])
-    _, by_cause = summarize(units, lambda u: u["root_cause"] == "Sterility")
-    summary = {"unit": "one drug in one recall event", "since": "2020-01-01",
-               "recalled_drugs": len(units), "followed": followed, "rate": round(overall, 4),
-               "rate_by_flag": {k: round(v[2], 4) for k, v in by_flag.items()},
-               "lift": {k: round(v[3], 2) for k, v in by_flag.items()},
+    _, by_cause = summarize(judged, lambda u: u["root_cause"] == "Sterility")
+
+    def r4(x):
+        return None if x is None else round(x, 4)
+
+    summary = {"unit": "one drug in one recall event", "since": SINCE.isoformat(),
+               "window": "from the report date to 365 days after",
+               "cohort_end": (today - timedelta(days=FOLLOW_DAYS)).isoformat(),
+               "recalled_drugs": len(cohort), "waiting_for_full_year": waiting, "primary": PRIMARY,
+               "followed": primary["followed"], "rate": r4(primary["rate"]),
+               "rate_by_flag": {"watch": r4(primary["watch_rate"]), "low": r4(primary["low_rate"])},
+               "lift": {"watch": None if primary["lift"] is None else round(primary["lift"], 2)},
                "sterility_lift": round(by_cause[True][3], 2) if True in by_cause else None,
-               "computed_on": (today or date.today()).isoformat()}
+               "definitions": {d: {"counted": s["counted"], "followed": s["followed"],
+                                   "rate": r4(s["rate"]),
+                                   "watch_rate": r4(s["watch_rate"]), "low_rate": r4(s["low_rate"]),
+                                   "capture": r4(s["capture"])} for d, s in scores.items()},
+               "baselines": {"flag_all": {"flagged": len(judged), "precision": r4(primary["rate"]),
+                                          "per_week": round(primary["all_per_week"], 1)},
+                             "watch": {"flagged": primary["watch"], "precision": r4(primary["watch_rate"]),
+                                       "capture": r4(primary["capture"]), "workload": r4(primary["workload"]),
+                                       "per_week": round(primary["watch_per_week"], 1)}},
+               "lead_days": primary["lead_days"], "caveat": MISSING_HISTORY,
+               "computed_on": today.isoformat()}
     return lines, summary
 
 
@@ -387,13 +581,16 @@ def save_backtest(lines, summary, report_path, json_path):
 
 def backtest():
     """The command: the backtest on DATA_DIR, printed and saved to audit/ as a snapshot."""
-    for path in (NDC_PATH, RECALLS_PATH, RISK_PATH, LINKS_PATH):
+    paths = {"recalls": RECALLS_PATH, "risk": RISK_PATH, "links": LINKS_PATH, "ndc": NDC_PATH,
+             "recall_ids": RECALL_IDS_PATH, "shortage_drugs": SHORTAGE_DRUGS_PATH,
+             "snapshots": SNAPSHOTS_PATH}
+    for path in paths.values():
         if not path.exists():
             sys.exit(f"{path} is missing. Copy the data branch in first: "
                      "git fetch origin data, then git archive origin/data | tar -x -C data")
-    lines, summary = run_backtest(RECALLS_PATH, RISK_PATH, LINKS_PATH, NDC_PATH)
+    lines, summary = run_backtest(paths)
     if not lines:
-        sys.exit("No recalled drugs since 2020 to score.")
+        sys.exit("No recalled drug since 2020 has had its full year yet.")
     save_backtest(lines, summary, BACKTEST_RESULTS, BACKTEST_JSON)
     print("\n".join(lines))
     print(f"Saved {BACKTEST_RESULTS} and {BACKTEST_JSON.name}")
@@ -568,10 +765,15 @@ def check_report(result, unnamed, today, backtest=None):
                      f"{row['followed']:,} | {_rate(row)} | {row['in_their_year']:,} | "
                      f"{row['followed_already']:,} |")
     lines.append("")
-    rates = (backtest or {}).get("rate_by_flag", {})
+    # this test counts any link of the same drug name, so it's compared with the backtest
+    # counted the same way, not with its same-route headline
+    any_link = (backtest or {}).get("definitions", {}).get("any_link")
+    rates = ({"watch": any_link.get("watch_rate"), "low": any_link.get("low_rate")} if any_link
+             else (backtest or {}).get("rate_by_flag", {}))
     if rates.get("watch") and rates.get("low"):
         lines += [f"For comparison, the backtest on recalls since 2020 expects about "
-                  f"{rates['watch']:.1%} for watch and {rates['low']:.1%} for low.", ""]
+                  f"{rates['watch']:.1%} for watch and {rates['low']:.1%} for low, counted the "
+                  "same way as here, through any link of the same drug name.", ""]
     lines += ["High means the drug was already on FDA's shortage list when it was flagged, so "
               "it's a status, not a prediction. For high, followed means another listing of the "
               "same drug was posted after the flag.", "", "## Followed so far", ""]
