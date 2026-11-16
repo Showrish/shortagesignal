@@ -4,6 +4,8 @@ A daily, automated pipeline on real FDA data that links drug recalls to drug sho
 
 **[Live dashboard](https://shortagesignal.streamlit.app)** · runs every day at 12:00 UTC on GitHub Actions · costs a fraction of a cent a day
 
+![The live dashboard's Risk flags tab](docs/images/dashboard.png)
+
 ## What it found
 
 As of Nov 2, 2026. The dashboard always has the latest numbers.
