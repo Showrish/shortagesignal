@@ -15,10 +15,9 @@ from shortagesignal.risk import (
     is_injectable,
     judge_log,
     log_units,
+    route_of,
     run_backtest,
     score_recall,
-    score_units,
-    summarize,
     wilson,
 )
 from shortagesignal.config import ROOT
@@ -155,22 +154,13 @@ def test_control_chart_fills_empty_weeks_and_flags_a_spike(tmp_path):
     assert table[20][1:] == (0, "below")
 
 
-def test_score_units_scores_each_drug_in_an_event_on_its_own():
-    labelers = {"heparin sodium": 2, "carboplatin": 1}
-    rows = [("e1", "heparin sodium", "Sterility", True, "Heparin Sodium Injection, 10 mL vial"),
-            ("e1", "heparin sodium", "Sterility", True, "Heparin Sodium Injection, 30 mL vial"),
-            ("e1", "carboplatin", "Sterility", False, "Carboplatin tablets"),
-            ("e2", "aspirin", "CGMP", False, "Aspirin tablets")]
-    units = {(u["root_cause"], u["labelers"]): u for u in score_units(rows, labelers)}
-    assert len(units) == 3                              # two drugs in e1, one in e2
-    heparin, carboplatin, aspirin = units[("Sterility", 2)], units[("Sterility", 1)], units[("CGMP", None)]
-    assert (heparin["flag"], heparin["followed"]) == ("watch", True)   # an injectable
-    assert (carboplatin["flag"], carboplatin["followed"]) == ("low", False)
-    assert aspirin["flag"] == "low"
-    overall, table = summarize(list(units.values()), lambda u: u["flag"])
-    assert overall == pytest.approx(1 / 3)
-    assert table["watch"] == (1, 1, 1.0, pytest.approx(3.0))
-    assert table["low"] == (2, 0, 0.0, 0.0)
+def test_route_of_reads_how_a_product_is_given():
+    assert route_of("Heparin Sodium Injection, USP, 10 mL vial") == "injectable"
+    assert route_of("Timolol Maleate Ophthalmic Solution, 5 mL in a 10 mL vial") == "ophthalmic"
+    assert route_of("Fentanyl Transdermal System, 25 mcg/hr") == "transdermal"
+    assert route_of("Ibuprofen Tablets, 200 mg") == "oral"
+    assert route_of("Hydrocortisone Cream 1%") == "topical"
+    assert route_of("Sodium Chloride 0.9%") is None
 
 
 def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):
@@ -200,29 +190,60 @@ def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):
     assert [(r[0], r[1], r[5]) for r in followed] == [("e1", "heparin sodium", 100)]
 
 
-def test_run_backtest_works_on_the_files_a_daily_run_builds(tmp_path):
+def test_run_backtest_counts_from_the_report_and_three_ways(tmp_path):
     con = duckdb.connect()
-    paths = {name: tmp_path / f"{name}.parquet" for name in ("recalls", "risk", "links", "ndc")}
-    save(con, [{"recall_number": "D-1", "recall_initiation_date": "20250101",
-                "product_description": "Heparin Sodium Injection, 10 mL vial"},
-               {"recall_number": "D-2", "recall_initiation_date": "20250101",
-                "product_description": "Carboplatin tablets"}], paths["recalls"], tmp_path)
-    save(con, [{"recall_number": "D-1", "event_id": "e1", "drug_key": "heparin sodium",
-                "root_cause": "Sterility"},
-               {"recall_number": "D-2", "event_id": "e1", "drug_key": "carboplatin",
-                "root_cause": "Sterility"}], paths["risk"], tmp_path)
-    save(con, [{"recall_number": "D-1", "shortage_list_type": "shortage",
-                "shortage_posted": "04/11/2025"}], paths["links"], tmp_path)
+    names = ("recalls", "risk", "links", "ndc", "recall_ids", "shortage_drugs", "snapshots")
+    paths = {name: tmp_path / f"{name}.parquet" for name in names}
+    save(con, [{"recall_number": n, "product_description": d} for n, d in [
+        ("D-1", "Heparin Sodium Injection, 10 mL vial"), ("D-2", "Carboplatin tablets"),
+        ("D-3", "Fentanyl Citrate Injection, 2 mL vial"), ("D-4", "Morphine Sulfate Injection"),
+        ("D-5", "Sodium Chloride 0.9%, 1 L")]],      # the text doesn't say how it's given
+        paths["recalls"], tmp_path)
+    save(con, [{"recall_number": n, "event_id": e, "drug_key": k, "root_cause": c, "report_date": r}
+               for n, e, k, c, r in [
+                   ("D-1", "e1", "heparin sodium", "Sterility", "20250115"),
+                   ("D-2", "e1", "carboplatin", "Sterility", "20250115"),
+                   ("D-3", "e2", "fentanyl citrate", "CGMP", "20250115"),
+                   ("D-4", "e3", "morphine sulfate", "CGMP", "20260601"),    # its year isn't up
+                   ("D-5", "e4", "sodium chloride", "CGMP", "20250115")]],
+         paths["risk"], tmp_path)
+    save(con, [{"recall_number": n, "firm_key": f} for n, f in [
+        ("D-1", "HOSPIRA"), ("D-2", "HOSPIRA"), ("D-3", "PFIZER"), ("D-4", "PFIZER"),
+        ("D-5", "BAXTER")]],
+        paths["recall_ids"], tmp_path)
+    save(con, [{"recall_number": n, "shortage_key": k, "shortage_list_type": "shortage",
+                "shortage_posted": posted} for n, k, posted in [
+        ("D-1", "S1", "03/01/2025"),
+        ("D-3", "S2", "04/01/2025"),
+        ("D-2", "S3", "01/10/2025"),     # after the firm started the recall, but before its report
+        ("D-4", "S4", "07/01/2026")]], paths["links"], tmp_path)
+    save(con, [{"shortage_key": k, "firm_key": f} for k, f in [
+        ("S1", "HOSPIRA"), ("S2", "MYLAN"), ("S3", "TEVA"), ("S4", "PFIZER")]],
+        paths["shortage_drugs"], tmp_path)
+    save(con, [{"snapshot_date": "2026-11-01", "shortage_key": k, "dosage_form": form,
+                "presentation": presentation, "generic_name": name} for k, form, presentation, name in [
+        ("S1", "Injection", "1,000 units/mL vial", "Heparin Sodium Injection"),
+        ("S2", "Patch", "25 mcg/hr", "Fentanyl Transdermal System"),
+        ("S3", "Tablet", "50 mg", "Carboplatin"),
+        ("S4", "Injection", "10 mg/mL", "Morphine Sulfate Injection")]], paths["snapshots"], tmp_path)
     save(con, [{"generic_name": "Heparin Sodium", "labeler_name": "Pfizer"},
                {"generic_name": "Carboplatin", "labeler_name": "Teyro Labs"}], paths["ndc"], tmp_path)
 
-    lines, summary = run_backtest(paths["recalls"], paths["risk"], paths["links"], paths["ndc"],
-                                  date(2026, 11, 8))
-    assert lines[0] == "# Risk flag backtest"
-    assert "| watch | 1 | 1 | 100.0% | 2.0x |" in lines           # the injectable went short
-    assert (summary["recalled_drugs"], summary["followed"], summary["rate"]) == (2, 1, 0.5)
-    assert summary["rate_by_flag"] == {"watch": 1.0, "low": 0.0}
-    assert summary["computed_on"] == "2026-11-08"
+    lines, summary = run_backtest(paths, date(2026, 11, 16))
+    # the morphine recall's year isn't up, so it waits, and 4 recalled drugs count
+    assert (summary["recalled_drugs"], summary["waiting_for_full_year"]) == (4, 1)
+    found = summary["definitions"]
+    # same route can't judge the sodium chloride, whose text doesn't say how it's given
+    assert (found["any_link"]["counted"], found["same_route"]["counted"]) == (4, 3)
+    # carboplatin's shortage was posted before its report, so it isn't followed under any definition
+    assert found["any_link"]["followed"] == 2         # heparin and fentanyl
+    assert found["same_route"]["followed"] == 1       # a fentanyl patch isn't an injection
+    assert found["same_company"]["followed"] == 1     # and it's another company's
+    assert (summary["primary"], summary["followed"]) == ("same_route", 1)
+    assert summary["rate_by_flag"] == {"watch": 0.5, "low": 0.0}   # 2 injectables, 1 followed
+    assert summary["baselines"]["watch"]["capture"] == 1.0
+    assert summary["lead_days"]["median"] == 45          # reported Jan 15, posted Mar 1
+    assert any("fixes incomplete follow-up, not missing history" in line for line in lines)
 
 
 def test_flag_lift_reads_a_saved_backtest(tmp_path):
@@ -320,11 +341,12 @@ def test_judge_log_verdicts():
 def test_check_report_says_it_in_plain_words():
     result = judge_log([_unit("watch", date(2026, 10, 27)), _unit("low", date(2026, 10, 28))],
                        date(2026, 11, 7))
-    text = "\n".join(check_report(result, 1, date(2026, 11, 7),
-                                  {"rate_by_flag": {"watch": 0.019, "low": 0.009}}))
+    backtest = {"rate_by_flag": {"watch": 0.017, "low": 0.004},          # the same-route headline
+                "definitions": {"any_link": {"watch_rate": 0.019, "low_rate": 0.009}}}
+    text = "\n".join(check_report(result, 1, date(2026, 11, 7), backtest))
     assert "**Too early to judge.**" in text and "The first ones finish on Oct 27, 2027." in text
     assert "| watch | 1 | 0 | 0 | not yet | 1 | 0 |" in text
-    assert "expects about 1.9% for watch and 0.9% for low" in text
+    assert "expects about 1.9% for watch and 0.9% for low" in text    # any link, like this test
     assert "No recall was logged under the old points." in text
     assert "1 logged recall has no drug name" in text
 

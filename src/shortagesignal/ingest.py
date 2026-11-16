@@ -586,15 +586,19 @@ def run(data_dir, now, stats):
             # report on the data, not part of it, so a problem here only skips it, and the last
             # saved copy stays.
             try:
-                lines, summary = run_backtest(recalls, stage / RISK_PATH.name,
-                                              stage / LINKS_PATH.name, ndc, today)
+                lines, summary = run_backtest(
+                    {"recalls": recalls, "risk": stage / RISK_PATH.name,
+                     "links": stage / LINKS_PATH.name, "ndc": ndc,
+                     "recall_ids": stage / RECALL_IDS_PATH.name,
+                     "shortage_drugs": stage / SHORTAGE_DRUGS_PATH.name,
+                     "snapshots": stage / SNAPSHOTS_PATH.name}, today)
                 if lines:
                     save_backtest(lines, summary, stage / BACKTEST_REPORT_PATH.name,
                                   stage / BACKTEST_PATH.name)
                     rates = summary["rate_by_flag"]
-                    print(f"Backtest: {summary['recalled_drugs']:,} drugs recalled since 2020, "
-                          f"watch followed {rates.get('watch', 0):.1%} of the time and low "
-                          f"{rates.get('low', 0):.1%}")
+                    print(f"Backtest: {summary['recalled_drugs']:,} recalled drugs with a full year "
+                          f"since their report, same route: watch followed "
+                          f"{rates.get('watch') or 0:.1%} of the time and low {rates.get('low') or 0:.1%}")
             except Exception as e:  # a report, so it never stops the run
                 print(f"Backtest skipped: {e}")
             if w["ucl"] is not None:

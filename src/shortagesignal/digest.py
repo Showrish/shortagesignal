@@ -295,9 +295,10 @@ def compose(facts):
                 "can make that shortage worse. Watch means an injectable.")
         rates = (facts.get("backtest") or {}).get("rate_by_flag", {})
         if rates.get("watch") and rates.get("low"):
-            para += (f" On drugs recalled since 2020, {rates['watch']:.1%} of injectables were "
-                     f"followed within a year by a shortage of the same drug, against "
-                     f"{rates['low']:.1%} of other recalls.")
+            para += (f" On drugs recalled since 2020 that have had a full year since their report, "
+                     f"{rates['watch']:.1%} of injectables were followed within that year by a "
+                     f"shortage of the same drug given the same way, against {rates['low']:.1%} of "
+                     "other recalls.")
         table = (["flag", "drug", "firm", "root cause", "reasons"],
                  [[r["flag"], r["drug"] or "(not named)", r["firm"], r["root_cause"], r["reasons"]]
                   for r in facts["flagged"][:10]])

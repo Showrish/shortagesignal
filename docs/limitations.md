@@ -1,6 +1,6 @@
 # Limitations
 
-What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Nov 2, 2026. Every daily run works the backtest out again, and the dashboard shows the latest numbers.
+What ShortageSignal can't see, where it can be wrong, and how far its findings go. The numbers below are from the backtest of Nov 16, 2026. Every daily run works the backtest out again, and the dashboard shows the latest numbers.
 
 ## What the data leaves out
 
@@ -29,15 +29,16 @@ The full results are in [ai_evals.md](ai_evals.md). In short:
 
 ## How far the findings go
 
-- **Shortages after a recall are rare.** About 1.2% of drugs recalled since 2020 (45 of 3,639) were followed within a year by a shortage of the same drug. With so few, every rate here has a wide range.
-- **Followed doesn't mean caused.** Many of the 45 are drugs that are short again and again, like fentanyl, atropine and rocuronium. A recall of a fragile drug and a later shortage can both happen without one causing the other.
-- **The signs were chosen by looking at this same data,** so the backtest is optimistic. An earlier version counted recall events instead of drugs and overstated the signal, with Sterility at about 3 times the average and high flags at about 4 times. Counting each drug in each event cut Sterility to about 1.3 times and the old high flag to zero. The decision log has the details.
-- **Recent recalls haven't had a full year to be followed,** so the rates for the latest year are understated.
+- **Shortages after a recall are rare.** Of the 2,868 recalled drugs since 2020 whose route can be read and that have had a full year since their report, 27 (0.9%) were followed within that year by a shortage of the same drug given the same way, and 41 of 3,302 (1.2%) through any link. With so few, every rate has a wide range. Watch flags caught 20 of the 27, which could be anywhere from about 55% to 87%.
+- **Followed doesn't mean caused.** Only 4 outcomes were the same company's product, by cleaned company name, so a recall rarely becomes that company's own shortage. A subsidiary and its parent count as different companies, so 4 is a lower bound. A recall of a fragile drug and a later shortage can both happen without one causing the other.
+- **The signs were chosen by looking at this same data,** so the backtest is optimistic, and its split by period is a consistency check, not a holdout. Earlier versions overstated the signal twice: counting recall events instead of drugs put Sterility at about 3 times the average, and starting each year when the firm began the recall, before FDA reported it, counted shortages no flag could have seen. The decision log has the details.
+- **The backtest only counts recalls with a full year after their report,** and starts each year on the report date, the first day a flag could exist. That fixes incomplete follow-up and look-ahead, not the missing resolved shortages above, which still undercount older years.
+- **Matching decides what counts as followed.** The backtest counts it three ways: any link, the same route (the headline) and the same company. The route is read from the text, and it couldn't be read for 434 recalled drugs, which same route leaves out, while 6 more outcomes linked only to shortage listings whose route couldn't be read. The route and company comparisons haven't been checked by hand yet.
 
 ## How far the risk flag goes
 
 - **High is a status, not a prediction.** It means the drug is on FDA's shortage list right now, so the recall can make a shortage worse.
-- **Watch is a weak signal.** Injectables were followed by a shortage of the same drug 1.9% of the time, against 0.9% for everything else. Most watch flags will never lead to a shortage.
+- **Watch is a weak signal.** Injectables were followed by a shortage of the same drug given the same way 1.7% of the time, against 0.4% for other recalls whose route can be read. Most watch flags will never lead to a shortage.
 - **The honest test is still running.** `risk_log.csv` records each new recall's flag on the day it's given, and `python -m shortagesignal.risk check-log` checks them against shortages that come later, which the Monday digest reports too. A flag needs its full year before it counts, so the first verdict comes after Oct 26, 2027. Flags before Oct 26, 2026 used the old points and are kept apart.
 
 ## Keeping it running
