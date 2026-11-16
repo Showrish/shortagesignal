@@ -211,10 +211,9 @@ with flags:
     rates = (backtest_numbers() or {}).get("rate_by_flag", {})
     odds = ""
     if rates.get("watch") and rates.get("low"):
-        def per_100(rate):
-            return f"{100 * rate:.0f}" if rate >= 0.01 else f"{100 * rate:.1f}"
-        odds = (f". About {per_100(rates['watch'])} in 100 see their drug go short within a "
-                f"year, against {per_100(rates['low'])} in 100 for other recalls")
+        # both with one decimal, so the two numbers read the same way
+        odds = (f". {100 * rates['watch']:.1f} in 100 see their drug go short within a year, "
+                f"against {100 * rates['low']:.1f} in 100 for other recalls")
     st.markdown("🔴 **High:** the drug is already short, so this recall can make it worse. "
                 f"🟠 **Watch:** an injectable{odds}. ⚪ **Low:** neither.")
     if not counts.get("high", 0):
@@ -232,7 +231,7 @@ with flags:
         "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
         "drug": st.column_config.TextColumn("Drug"),
         "firm": st.column_config.TextColumn("Firm"),
-        "reasons": st.column_config.TextColumn("Why flagged"),
+        "reasons": st.column_config.TextColumn("Why flagged", width="large"),
         "root_cause": st.column_config.TextColumn("Root cause"),
         "product": st.column_config.TextColumn("Product", width="large"),
         "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the most serious."),
