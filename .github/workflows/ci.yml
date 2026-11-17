@@ -21,3 +21,11 @@ jobs:
         run: ruff check .
       - name: Tests
         run: pytest -q
+      # A change to the dashboard must only change how it looks: every SQL query, the data it
+      # reads, the passcode, the daily cap and every caveat stay as they are on the base branch.
+      - name: Dashboard changes keep every query and caveat
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          git show FETCH_HEAD:app/streamlit_app.py > /tmp/old_app.py
+          python scripts/check_ui_safety.py /tmp/old_app.py app/streamlit_app.py
