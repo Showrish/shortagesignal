@@ -4,6 +4,7 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 
 ## [Unreleased]
 ### Added
+- A link hand check, `python -m shortagesignal.link_check`: a blind sheet of 30 links to test the backtest's automatic route and company comparisons
 - A Pipeline health tab on the dashboard: recent runs, the latest data checks, data freshness, and the code and Claude versions behind the numbers
 - The run log records the commit of the code each run used
 - The risk log saves the drug and event each flag was matched to that day, and the forward test judges flags on them
