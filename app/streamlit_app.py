@@ -493,14 +493,14 @@ with health:
     shown = last_30.iloc[::-1].head(14)
     table = shown[[c for c in names if c in shown.columns]].rename(columns=names)
     table["Run, Boston time"] = shown["when"].dt.strftime("%b %-d, %-I:%M %p")
-    st.dataframe(table, hide_index=True, use_container_width=True)
+    st.dataframe(table, hide_index=True, width="stretch")
 
     try:
         checks = pd.read_csv(fetch("check_log.csv"))
         latest = checks[checks["run_at_utc"] == checks["run_at_utc"].max()]
         st.markdown(f"**The {len(latest)} data checks on the latest run**")
         st.dataframe(latest[["check", "severity", "status", "value", "detail"]]
-                     .rename(columns=str.capitalize), hide_index=True, use_container_width=True)
+                     .rename(columns=str.capitalize), hide_index=True, width="stretch")
     except (requests.RequestException, OSError, KeyError, ValueError):
         st.caption("The check log isn't available right now.")
 
@@ -518,7 +518,7 @@ with health:
         st.dataframe(made_by.rename(columns={"task": "Task", "model": "Model",
                                              "prompt_version": "Prompt version",
                                              "answers": "Answers", "latest": "Latest answer"}),
-                     hide_index=True, use_container_width=True)
+                     hide_index=True, width="stretch")
     except (requests.RequestException, OSError, duckdb.Error):
         st.caption("The Claude caches aren't available right now.")
     st.caption("Code version is the commit each run used, so any result can be traced to the code "
