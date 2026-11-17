@@ -1,0 +1,73 @@
+# Native Streamlit styling, with Streamlit's own fonts, so nothing is loaded from elsewhere.
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+font = "sans-serif"
+headingFont = "sans-serif"
+codeFont = "monospace"
+baseFontSize = 16
+baseFontWeight = 400
+headingFontSizes = ["2rem", "2.25rem", "1.25rem", "1.125rem", "1rem", "1rem"]
+headingFontWeights = [400, 700, 700, 700, 700, 700]
+metricValueFontSize = "1.5rem"
+metricValueFontWeight = 400
+baseRadius = "0.25rem"
+buttonRadius = "0.25rem"
+showWidgetBorder = true
+paddingTop = "1.5rem"
+paddingBottom = "2rem"
+linkUnderline = true
+
+[theme.light]
+primaryColor = "#2F5D8A"
+backgroundColor = "#F4F6F5"
+secondaryBackgroundColor = "#E6EBE9"
+textColor = "#18232B"
+linkColor = "#2F5D8A"
+blueColor = "#2F5D8A"
+blueTextColor = "#2F5D8A"
+blueBackgroundColor = "#E6EBE9"
+redColor = "#B42318"
+redTextColor = "#B42318"
+redBackgroundColor = "#F4E4E1"
+orangeColor = "#B26B00"
+# Dark text on the amber tint keeps small labels readable in the light theme.
+orangeTextColor = "#18232B"
+orangeBackgroundColor = "#F2DFBD"
+grayColor = "#66717A"
+grayTextColor = "#66717A"
+grayBackgroundColor = "#F4F6F5"
+borderColor = "#CBD4D1"
+dataframeBorderColor = "#CBD4D1"
+dataframeHeaderBackgroundColor = "#E6EBE9"
+dataframeHeaderTextColor = "#18232B"
+# The fourth color is the page background: the What follows chart writes each share
+# inside its bar in it, so the label reads on the bar in either theme.
+chartCategoricalColors = ["#2F5D8A", "#66717A", "#66717A", "#F4F6F5"]
+
+[theme.dark]
+primaryColor = "#8DB3D9"
+backgroundColor = "#1B2329"
+secondaryBackgroundColor = "#25303A"
+textColor = "#E8EEEC"
+linkColor = "#8DB3D9"
+blueColor = "#8DB3D9"
+blueTextColor = "#8DB3D9"
+blueBackgroundColor = "#25303A"
+redColor = "#FF8A80"
+redTextColor = "#FF8A80"
+redBackgroundColor = "#3A292B"
+orangeColor = "#F2B04C"
+orangeTextColor = "#F2B04C"
+orangeBackgroundColor = "#352E24"
+grayColor = "#A3AEB6"
+grayTextColor = "#A3AEB6"
+grayBackgroundColor = "#25303A"
+borderColor = "#46545E"
+dataframeBorderColor = "#46545E"
+dataframeHeaderBackgroundColor = "#25303A"
+dataframeHeaderTextColor = "#E8EEEC"
+# The fourth color is the page background, for the share inside each bar.
+chartCategoricalColors = ["#8DB3D9", "#A3AEB6", "#A3AEB6", "#1B2329"]
