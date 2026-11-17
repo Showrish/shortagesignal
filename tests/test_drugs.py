@@ -15,6 +15,8 @@ from shortagesignal.drugs import drug_key, text_drug_name
         ("Bupivacaine HCl Injection", "bupivacaine hydrochloride"),
         ("Sodium Chloride 0.9% Injection, USP Bags", "sodium chloride"),
         ("Carboplatin Injection (Pharmacy Bulk Package)", "carboplatin"),
+        ("MENTHOL FLAVOR COUGH DROP", "menthol"),
+        ("Fentanyl Base", "fentanyl base"),     # never plain fentanyl, see PHRASES
         ("", None),
         (None, None),
     ],
@@ -35,3 +37,11 @@ def test_drug_key(name, expected):
 )
 def test_text_drug_name(description, expected):
     assert text_drug_name(description) == expected
+
+
+def test_text_drug_name_can_read_past_strengths():
+    text = "Ergotamine Tartrate 1 mg/Caffeine 100 mg base F Suppository (Pink) 48 suppositories, Rx"
+    assert text_drug_name(text) == "Ergotamine Tartrate"
+    assert text_drug_name(text, past_strengths=True) == (
+        "Ergotamine Tartrate 1 mg/Caffeine 100 mg base F Suppository")
+
