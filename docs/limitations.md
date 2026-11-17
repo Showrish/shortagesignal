@@ -43,6 +43,7 @@ The full results are in [ai_evals.md](ai_evals.md). In short:
 
 ## Keeping it running
 
+- **A few recalls come without a real recall number.** FDA occasionally gives N/A or nothing. Each of those is stored under its own NA- key, made from its event and product text, so they don't overwrite each other. If FDA later edits such a recall's product text, it shows up as a new row rather than an update.
 - **It depends on openFDA.** The data checks catch fields that disappear, lists that collapse and stale data, but not a field that quietly changes meaning.
 - **One person maintains it.** GitHub pauses the schedule after 60 days without activity in the repo, and the Claude credits are prepaid. The weekly digest warns about both.
 - **The data branch keeps one commit,** and run backups last 30 days. Older states of the data can only be rebuilt from the tables' own history, like `recall_versions` and `shortage_snapshots`.

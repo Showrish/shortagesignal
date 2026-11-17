@@ -16,6 +16,9 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - Every daily run works out the risk flag's backtest and saves it to the data branch, so the dashboard and the digest always quote today's numbers
 - The backtest starts each recall's year on its report date, counts only recalls with a full year since, counts a shortage three ways (any link, the same route, the same company) with the same route as the headline, and compares the watch flag with flagging every recall on precision, share caught, review work and lead time
 
+### Fixed
+- Recalls FDA gives no recall number, or N/A, each keep their own row under an NA- key instead of overwriting each other, and one already lost that way comes back from the history
+
 ## [1.0.0] - 2026-11-08
 ### Added
 - A live Streamlit dashboard: risk flags, the weekly control chart, what follows a recall, and an About tab
