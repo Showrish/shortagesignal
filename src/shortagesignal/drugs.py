@@ -16,9 +16,30 @@ FORM_WORDS = {
     "pharmacy", "bulk", "package", "preservative", "free", "rx", "only", "drops", "liquid",
     "elixir", "syrup", "patch", "transdermal", "suppository", "suppositories", "vaginal",
     "rectal", "granules", "packet", "packets", "unit", "units", "mg", "mcg", "ml", "gm",
-    "meq", "compounded", "the", "of", "an",
+    "meq", "compounded", "the", "of", "an", "flavor", "flavors", "flavored", "flavour", "lozenge",
+    "lozenges",
 }
+# Not "base" or "cough" on their own: the NDC directory has bulk listings like "Fentanyl Base",
+# and stripping the word would make them plain "fentanyl", which breaks links to the shortage
+# list's "fentanyl citrate". The phrase "cough drop" is safe to drop.
+PHRASES = re.compile(r"\bcough drops?\b")
 SYNONYMS = {"hcl": "hydrochloride", "hbr": "hydrobromide"}
+
+# Store brands and plain words that turn up where a drug name should be, like an NDC listing
+# whose generic name is "CVS" or a recall whose text starts with the store's name. They never
+# count as a drug.
+NOT_DRUGS = frozenset({
+    "cvs", "cvs health", "walgreens", "equate", "kroger", "rite aid", "up", "good neighbor",
+    "leader", "careone", "care one", "topcare", "basic care", "amazon basic care",
+    "signature care", "exchange select", "sunmark", "quality choice", "member mark",
+    "members mark", "kirkland signature", "harris teeter", "publix", "meijer", "good sense",
+    "goodsense", "health mart", "dg health",
+    "eye", "ear", "ice", "oak", "spf", "tmj", "md",   # not "fat": "Fat Emulsion" cleans to it
+})
+
+# What a drug is mixed into, rather than a second drug, written the way drug_key writes them.
+DILUENTS = frozenset({"sodium chloride", "dextrose", "water", "bacteriostatic water",
+                      "lactated ringer", "ringer"})
 
 
 def drug_key(name):
@@ -30,7 +51,7 @@ def drug_key(name):
     """
     if not name:
         return None
-    text = re.sub(r"\([^)]*\)", " ", name.lower())
+    text = PHRASES.sub(" ", re.sub(r"\([^)]*\)", " ", name.lower()))
     parts = re.split(r"\s+and\s+|\s+in\s+|\s+with\s+|[;,/+&]", text)
     cleaned = set()
     for part in parts:
@@ -45,13 +66,16 @@ def drug_key(name):
     return " + ".join(sorted(cleaned)) or None
 
 
-def text_drug_name(description):
+def text_drug_name(description, past_strengths=False):
     """The drug name at the start of a recall's product description.
 
     "Heparin Sodium Injection, USP, 1,000 USP Units/mL" gives "Heparin Sodium Injection".
-    It stops at the first comma, bracket, digit or "NDC".
+    It stops at the first comma, bracket, digit or "NDC". With past_strengths, it doesn't stop
+    at digits, so "Ergotamine Tartrate 1 mg/Caffeine 100 mg Suppository" keeps the caffeine,
+    and drug_key drops the strengths.
     """
     if not description:
         return None
-    head = re.split(r",|\(|\d|\bNDC\b", description, maxsplit=1)[0]
+    stops = r",|\(|\bNDC\b" if past_strengths else r",|\(|\d|\bNDC\b"
+    head = re.split(stops, description, maxsplit=1)[0]
     return head.strip() or None

@@ -24,10 +24,11 @@ Tables written:
   recall_shortage_links  one row per recall and shortage listing that share a drug
   unmatched_recalls      recalls with no NDC and no recognizable drug name
 """
+import re
 from collections import defaultdict
 from pathlib import Path
 
-from shortagesignal.drugs import drug_key, text_drug_name
+from shortagesignal.drugs import DILUENTS, NOT_DRUGS, drug_key, text_drug_name
 from shortagesignal.firms import firm_key
 from shortagesignal.identify import json_list
 from shortagesignal.ndc import normalize_product_ndc
@@ -49,10 +50,27 @@ def identify_drug(ndc9s, openfda_text, description, ndc_map, vocabulary, brand_m
     names = json_list(openfda_text, "generic_name")
     if names:
         key = drug_key(names[0])
-        if key:
+        if key and key not in NOT_DRUGS:
             return key, "openfda"
     # A name from the description only counts if it's a drug we know exists.
     key = drug_key(text_drug_name(description))
+    # Reading on past the first strength can find a second drug, as in "Ergotamine 1 mg/Caffeine
+    # 100 mg". It only ever extends a reading that's already a known drug, by a drug that isn't a
+    # diluent, into a known combination. It never replaces the first reading: "fentaNYL in 0.9%
+    # sodium chloride, 10 mcg/mL" reads first as "fentanyl in", which isn't known, so it goes to
+    # Claude for "fentanyl citrate" instead of becoming bare "fentanyl", which the shortage
+    # list's "fentanyl citrate" wouldn't link to. "base" here is a suppository or cream base.
+    if key in vocabulary:
+        fuller = drug_key(re.sub(r"\bbase\b", " ",
+                                 text_drug_name(description, past_strengths=True) or "", flags=re.I))
+        parts = set((fuller or "").split(" + ")) - DILUENTS - {""}
+        first = set(key.split(" + "))
+        if first < parts:
+            combined = " + ".join(sorted(parts))
+            if combined in vocabulary:
+                key = combined
+    if key in NOT_DRUGS:
+        key = None
     if key in vocabulary:
         return key, "text_name"
     if key in brand_map:
@@ -76,7 +94,7 @@ def check_claude_key(key, known, brand_map, known_parts=None):
     out diluents, while a name read from the description could keep the sodium chloride of
     'fentanyl in 0.9% sodium chloride'. Pass known_parts (drug_parts(known)) when checking
     many keys, so it's worked out once."""
-    if not key:
+    if not key or key in NOT_DRUGS:
         return None
     if key in known:
         return key
@@ -96,7 +114,10 @@ def _directory(con, ndc_path):
         f"SELECT product_ndc, generic_name, brand_name FROM read_parquet('{ndc_path}')"
     ).fetchall():
         key = drug_key(generic)
-        if not key:
+        # A listing whose generic name is a store brand or a plain word, like "CVS", has messy
+        # fields, so it's skipped. Its brand field can't be trusted either: using it added bare
+        # names like "fentanyl", which then beat the salt names the shortage list uses.
+        if not key or key in NOT_DRUGS:
             continue
         vocabulary.add(key)
         ndc9 = normalize_product_ndc(product_ndc)

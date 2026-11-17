@@ -1,7 +1,7 @@
 """Matching recalls to shortages."""
 import duckdb
 
-from shortagesignal.match import build_matches, check_claude_key, identify_drug
+from shortagesignal.match import _directory, build_matches, check_claude_key, identify_drug
 from shortagesignal.storage import load_batch, write_parquet
 
 NDC_MAP = {"00409-4888": "heparin sodium"}
@@ -65,6 +65,38 @@ def test_identify_drug_keeps_text_names_strict_for_combinations():
     assert identify_drug([], None, text, NDC_MAP, vocabulary, BRANDS,
                          claude_key="cyanocobalamin + semaglutide") == (
         "cyanocobalamin + semaglutide", "claude")
+
+
+def test_identify_drug_reads_a_second_drug_past_a_strength_only_when_known():
+    vocabulary = VOCABULARY | {"ergotamine tartrate", "caffeine + ergotamine tartrate",
+                               "fentanyl citrate", "fentanyl citrate + sodium chloride"}
+    text = "Ergotamine Tartrate 1 mg/Caffeine 100 mg base F Suppository (Pink) 48 suppositories, Rx"
+    assert identify_drug([], None, text, NDC_MAP, vocabulary, BRANDS) == (
+        "caffeine + ergotamine tartrate", "text_name")
+    # a diluent isn't a second drug, so a premix keeps its drug and its shortage links
+    premix = "Fentanyl Citrate 50 mcg in 0.9% Sodium Chloride 100 mL bag"
+    assert identify_drug([], None, premix, NDC_MAP, vocabulary, BRANDS) == ("fentanyl citrate", "text_name")
+    # it never replaces a first reading that isn't known: this goes to Claude, not bare fentanyl
+    syringe = "fentaNYL in 0.9% sodium chloride, 10 mcg/1 mL, (10 mcg/mL), 3 mL syringe, Rx only"
+    assert identify_drug([], None, syringe, NDC_MAP, vocabulary | {"fentanyl"}, BRANDS) == (None, None)
+    assert identify_drug([], None, syringe, NDC_MAP, vocabulary | {"fentanyl"}, BRANDS,
+                         claude_key="fentanyl citrate") == ("fentanyl citrate", "claude")
+    # and when the fuller name isn't a known drug, the first one stands
+    assert identify_drug([], None, text, NDC_MAP, vocabulary - {"caffeine + ergotamine tartrate"},
+                         BRANDS) == ("ergotamine tartrate", "text_name")
+
+
+def test_store_brands_never_count_as_drugs(tmp_path):
+    text = "CVS pharmacy, Pain Relieving Antiseptic Spray. Benzalkonium Cl 0.13% Lidocaine HCl 2.5%"
+    assert identify_drug([], None, text, NDC_MAP, VOCABULARY | {"cvs"}, BRANDS) == (None, None)
+    assert check_claude_key("cvs", {"cvs"}, {}) is None
+    # an NDC listing with a store brand as its generic name is skipped, brand field and all
+    con, path = duckdb.connect(), tmp_path / "ndc.parquet"
+    save(con, [{"product_ndc": "11111-222", "generic_name": "CVS", "brand_name": "Fentanyl"},
+               {"product_ndc": "00409-4888", "generic_name": "Heparin Sodium", "brand_name": "Heparin"}],
+         path, tmp_path)
+    _, _, vocabulary = _directory(con, path.as_posix())
+    assert vocabulary == {"heparin sodium"}
 
 
 def _fixture(con, tmp_path):
