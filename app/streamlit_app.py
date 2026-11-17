@@ -180,8 +180,9 @@ c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}",
 d.metric("Shortages FDA lists today", f"{current:,}",
          help="Current listings on FDA's drug shortage list.")
 
-flags, weekly, follows, asking, about = st.tabs(
-    ["Risk flags", "Weekly recalls", "What follows a recall", "Ask the data", "About"])
+flags, weekly, follows, asking, health, about = st.tabs(
+    ["Risk flags", "Weekly recalls", "What follows a recall", "Ask the data", "Pipeline health",
+     "About"])
 
 # ---------------------------------------------------------------- risk flags
 
@@ -216,6 +217,11 @@ with flags:
                 f"against {100 * rates['low']:.1f} in 100 for other recalls")
     st.markdown("🔴 **High:** the drug is already short, so this recall can make it worse. "
                 f"🟠 **Watch:** an injectable{odds}. ⚪ **Low:** neither.")
+    if odds:
+        st.caption("The odds count drugs recalled since 2020 that have had a full year since their "
+                   "report, and a shortage of the same drug given the same way. They describe this "
+                   "dataset: FDA drops resolved shortages after a while, so older years are "
+                   "undercounted.")
     if not counts.get("high", 0):
         st.caption(f"No recall in the last {days} days hit a drug that's already short.")
 
@@ -404,6 +410,70 @@ with asking:
 
 # ---------------------------------------------------------------- about
 
+with health:
+    st.markdown("Every daily run is logged with its numbers and its data checks. A run that fails "
+                "an error check saves nothing, so the dashboard keeps the day before's data.")
+    runs = run_log.copy()
+    runs["when"] = (pd.to_datetime(runs["run_at_utc"]).dt.tz_localize("UTC")
+                    .dt.tz_convert(BOSTON))
+    last_30 = runs.tail(30)
+    worked = int((last_30["status"] == "success").sum())
+    warned = int((pd.to_numeric(last_30["checks_warned"], errors="coerce").fillna(0) > 0).sum())
+    try:
+        ndc = json.loads(Path(fetch("state.json")).read_text(encoding="utf-8")).get("ndc_refreshed")
+    except (requests.RequestException, OSError, ValueError):
+        ndc = None
+    a, b, c, d = st.columns(4)
+    a.metric("Runs that worked, last 30", f"{worked} of {len(last_30)}")
+    b.metric("Runs with a warning, last 30", warned)
+    c.metric("FDA's newest recall report", nice_date(newest))
+    try:
+        ndc = nice_date(date.fromisoformat(str(ndc)[:10]))
+    except ValueError:
+        ndc = "unknown"
+    d.metric("NDC directory refreshed", ndc)
+
+    st.markdown("**The last 14 runs**")
+    names = {"when": "Run, Boston time", "status": "Status", "seconds": "Seconds",
+             "recalls_new": "New recalls", "recalls_changed": "Changed recalls",
+             "shortages_new": "New listings", "shortages_dropped": "Listings dropped",
+             "checks_warned": "Checks warned", "checks_failed": "Checks failed",
+             "code_version": "Code version", "error": "Error"}
+    shown = last_30.iloc[::-1].head(14)
+    table = shown[[c for c in names if c in shown.columns]].rename(columns=names)
+    table["Run, Boston time"] = shown["when"].dt.strftime("%b %-d, %-I:%M %p")
+    st.dataframe(table, hide_index=True, use_container_width=True)
+
+    try:
+        checks = pd.read_csv(fetch("check_log.csv"))
+        latest = checks[checks["run_at_utc"] == checks["run_at_utc"].max()]
+        st.markdown(f"**The {len(latest)} data checks on the latest run**")
+        st.dataframe(latest[["check", "severity", "status", "value", "detail"]]
+                     .rename(columns=str.capitalize), hide_index=True, use_container_width=True)
+    except (requests.RequestException, OSError, KeyError, ValueError):
+        st.caption("The check log isn't available right now.")
+
+    try:
+        made_by = con.execute(f"""
+            SELECT 'Root causes' AS task, model, prompt_version, COUNT(*) AS answers,
+                   max(CAST(tagged_at AS VARCHAR)) AS latest
+            FROM read_parquet('{fetch("claude_tags.parquet")}') GROUP BY ALL
+            UNION ALL
+            SELECT 'Drug names', model, prompt_version, COUNT(*), max(CAST(extracted_at AS VARCHAR))
+            FROM read_parquet('{fetch("claude_drugs.parquet")}') GROUP BY ALL
+            ORDER BY task, latest DESC
+        """).df()
+        st.markdown("**The Claude model and prompt behind the cached answers**")
+        st.dataframe(made_by.rename(columns={"task": "Task", "model": "Model",
+                                             "prompt_version": "Prompt version",
+                                             "answers": "Answers", "latest": "Latest answer"}),
+                     hide_index=True, use_container_width=True)
+    except (requests.RequestException, OSError, duckdb.Error):
+        st.caption("The Claude caches aren't available right now.")
+    st.caption("Code version is the commit each run used, so any result can be traced to the code "
+               f"that made it. Runs before mid-November 2026 don't have one. A failed run that "
+               f"didn't get logged here is on the [Actions page]({REPO_URL}/actions).")
+
 with about:
     st.markdown("""
 **What runs every day, on GitHub Actions**
@@ -419,7 +489,8 @@ with about:
 
 Every Monday, a digest of the week goes out by email, with an Excel list of items that need a
 look. The **Ask the data** tab answers questions in plain English with SQL that Claude writes,
-over a locked, read-only copy of the tables.
+over a locked, read-only copy of the tables. The **Pipeline health** tab shows each recent run,
+its data checks, and the code and Claude versions behind the numbers.
 
 **Data:** [openFDA](https://open.fda.gov/) drug enforcement reports, drug shortages and the NDC
 directory. Everything is public, and nothing here is medical advice.

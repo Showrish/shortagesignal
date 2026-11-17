@@ -107,7 +107,7 @@ RUN_LOG_COLUMNS = [
     "extract_waiting",
     "recalls_tagged_pct", "tag_backlog", "claude_calls", "claude_cost_usd", "risk_high_30d",
     "risk_watch_30d", "weekly_events_last", "weekly_signal", "checks_warned", "checks_failed",
-    "error",
+    "code_version", "error",
 ]
 DATA_FILES = [p.name for p in (RECALLS_PATH, RECALL_VERSIONS_PATH, SNAPSHOTS_PATH,
                                CURRENT_SHORTAGES_PATH, HISTORY_PATH, NDC_PATH,
@@ -632,6 +632,12 @@ def run(data_dir, now, stats):
         con.close()
 
 
+def code_version():
+    """The commit this run's code came from, so any result can be traced to the code that made
+    it. GitHub Actions sets GITHUB_SHA. A run anywhere else says local."""
+    return (os.environ.get("GITHUB_SHA") or "")[:7] or "local"
+
+
 def run_and_log(data_dir):
     """Run once and add a row to run_log.csv, whether the run worked or not."""
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -648,7 +654,8 @@ def run_and_log(data_dir):
     finally:
         append_run_log(data_dir / RUN_LOG_PATH.name, {
             "run_at_utc": now.isoformat(timespec="seconds"), "status": status,
-            "seconds": round(time.monotonic() - started, 1), **stats, "error": error,
+            "seconds": round(time.monotonic() - started, 1), **stats,
+            "code_version": code_version(), "error": error,
         })
 
 

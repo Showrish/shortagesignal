@@ -108,6 +108,8 @@ The dashboard is `app/streamlit_app.py`, on Streamlit Community Cloud. It doesn'
 
 **Ask the data** is behind `ASK_PASSCODE` and capped at 50 questions a day, shared by everyone using the app. The count starts over each day, and when the app restarts. Claude writes one SQL query, which runs on a locked, in-memory copy of the tables, then answers from the rows. Each question costs about 0.05 cents. To score it after changing the prompt, run `python -m shortagesignal.ask eval`, which costs under a cent.
 
+**Pipeline health:** the dashboard's Pipeline health tab shows the last 30 runs with their numbers and errors, the latest run's data checks, how fresh FDA's data is, and the code version and Claude model behind the results. A run that failed before it was logged is on the Actions page.
+
 **Keeping it awake:** Streamlit's free tier puts the app to sleep when nobody visits. The keep-awake workflow visits every 4 hours with a real browser, since a plain ping doesn't count. It only passes when the dashboard's own Risk flags tab shows up, so a run that fails, which emails you, means the app didn't load. To check it, run **Keep the dashboard awake** from the Actions tab, read its log, and open the screenshot kept with the run.
 
 **If the dashboard is down,** open the app's **Manage app** panel on Streamlit and check the logs, then use **Reboot app**. If a file it needs is missing from the data branch, the last daily run probably failed.
