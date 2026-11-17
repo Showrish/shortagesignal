@@ -49,9 +49,9 @@ VIEWS = {   # table name in the SQL -> file on the data branch
     "weekly_recalls": "weekly_recalls.parquet",
     "shortages_current": "shortages_current.parquet",
 }
-# One palette for every chart
-BLUE, GRAY, RED, ORANGE = "#2E6FD8", "#8C8C8C", "#D64545", "#E8913A"
+# Chart colors come from the native light/dark theme, not fixed RGB values.
 FLAG_LABELS = {"high": "🔴 High", "watch": "🟠 Watch", "low": "⚪ Low"}
+BOARD_SIZE = 10   # recalls shown on the Current exposure board; the table has all of them
 MATCH_LABELS = {"package": "Same package", "product": "Same product",
                 "drug_and_firm": "Same drug and company", "drug": "Same drug name only"}
 DAILY_QUESTIONS = 50
@@ -64,7 +64,7 @@ EXAMPLES = [
     "Which shortage listings have dropped off FDA's list since tracking started?",
 ]
 
-st.set_page_config(page_title="ShortageSignal", page_icon="💊", layout="wide")
+st.set_page_config(page_title="ShortageSignal", layout="wide")
 
 
 @st.cache_data(ttl=3600, show_spinner="Loading the latest pipeline data...")
@@ -142,11 +142,17 @@ def question_counter():
     return {"day": None, "count": 0}
 
 
+def choose_example():
+    """Fill the question field without submitting it or making an AI call."""
+    if st.session_state.get("ask_example"):
+        st.session_state["ask_question"] = st.session_state["ask_example"]
+
+
 try:
     con = connect()
     run_log = pd.read_csv(fetch("run_log.csv"))
 except Exception as exc:   # show the problem on the page instead of a stack trace
-    st.error(f"Couldn't load the pipeline data: {exc}")
+    st.info(f"Couldn't load the pipeline data: {exc}")
     st.stop()
 
 # ---------------------------------------------------------------- header
@@ -160,28 +166,28 @@ newest = con.execute(
     "SELECT max(TRY_STRPTIME(report_date, '%Y%m%d'))::DATE FROM recalls").fetchone()[0]
 
 st.title("ShortageSignal")
-st.markdown("Every day, a pipeline pulls FDA drug recalls and the drug shortage list, works out "
-            "which drug each recall is about, tags why it happened, links recalls to shortages, "
-            "and flags the recalls worth watching.")
-st.caption(f"Updated {nice_date(updated)}, {updated.hour % 12 or 12}:{updated:%M %p %Z}. "
-           f"FDA's newest recall report: {nice_date(newest)} ({(today - newest).days} days ago).")
+st.markdown("Tracks FDA drug recalls, current shortage exposure, and recalls worth watching.")
+
+# The newest logged run can differ from the last run that produced usable data.
+latest_run = run_log.iloc[-1]
+latest_run_time = (datetime.fromisoformat(str(latest_run["run_at_utc"]))
+                   .replace(tzinfo=timezone.utc).astimezone(BOSTON))
+run_status = {"success": "Passed", "failed": "Failed", "error": "Failed"}.get(
+    str(latest_run["status"]), str(latest_run["status"]).capitalize())
+if (latest_run["status"] == "success" and pd.notna(latest_run.get("checks_warned"))
+        and latest_run["checks_warned"] > 0):
+    run_status = "Completed with warnings"
+with st.container(horizontal=True, gap="large"):
+    st.markdown(f"**Data updated**  \n{nice_date(updated)}, "
+                f"{updated.hour % 12 or 12}:{updated:%M %p %Z}", width="content")
+    st.markdown(f"**FDA's newest recall report**  \n{nice_date(newest)} "
+                f"({(today - newest).days} days ago)", width="content")
+    st.markdown(f"**Last logged run**  \n{run_status}", width="content")
 
 current = con.execute("""
     SELECT COUNT(DISTINCT shortage_key) FROM shortages_current
     WHERE list_type = 'shortage' AND lower(status) = 'current'
 """).fetchone()[0]
-a, b, c, d = st.columns(4)
-a.metric("Recalls since 2012", f"{int(last['recalls_total']):,}",
-         help="Every drug recall in FDA's enforcement reports since June 2012.")
-b.metric("Drug named", f"{float(last['recalls_named_pct']):.0f}%",
-         help="Recalls where the pipeline worked out which drug it is, from NDC codes, the "
-              "product text, or Claude.")
-c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}",
-         help="Recalls of a drug that's on FDA's shortage list, by package, product, "
-              "drug and company, or drug.")
-d.metric("Shortages FDA lists today", f"{current:,}",
-         help="Current listings on FDA's drug shortage list.")
-
 flags, weekly, follows, asking, health, about = st.tabs(
     ["Risk flags", "Weekly recalls", "What follows a recall", "Ask the data", "Pipeline health",
      "About"])
@@ -189,7 +195,9 @@ flags, weekly, follows, asking, health, about = st.tabs(
 # ---------------------------------------------------------------- risk flags
 
 with flags:
-    days = st.selectbox("Recalls reported in the last", [30, 60, 90, 365], index=1, format_func=lambda n: f"{n} days")
+    st.header("Risk flags", divider="blue")
+    days = st.selectbox("Recalls reported in the last", [30, 60, 90, 365], index=1,
+                        format_func=lambda n: f"{n} days", width=240)
     since = date.today() - timedelta(days=days)
     st.markdown("Two different questions. **Current exposure:** which recalls hit a drug that's "
                 "already short, and how sure is the match? **Future monitoring:** which recalls are "
@@ -229,11 +237,12 @@ with flags:
                                     f"🟠 Future monitoring ({watch_count})"])
 
     with exposure:
+        st.badge("Already short", color="red")
         st.markdown("Recalls of a drug that's **on FDA's shortage list right now**, so the recall can "
                     "make that shortage worse. That's a fact, not a prediction. The strongest match "
                     "comes first.")
         if exposed.empty:
-            st.caption(f"No recall in the last {days} days hit a drug that's already short.")
+            st.markdown(f"No recall in the last {days} days hit a drug that's already short.")
         else:
             by_level = exposed["level"].value_counts()
             a, b, c = st.columns(3)
@@ -243,25 +252,46 @@ with flags:
             c.metric("Same drug name only", int(by_level.get("drug", 0)),
                      help="The weakest match: it can join different products, like an injection "
                           "and a patch of the same drug.")
+            a.markdown("The recall's NDC codes match the shortage listing's.")
+            c.markdown("The weakest match: it can join different products, like an injection "
+                       "and a patch of the same drug.")
+            st.markdown("A same-drug-name match is a lead to check, not a confirmed overlap.")
             shown = exposed.copy()
             shown["level"] = shown["level"].map(MATCH_LABELS)
             shown["drug"] = shown["drug"].fillna("(not named)").str.capitalize()
-            st.dataframe(shown, hide_index=True, column_config={
-                "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
-                "drug": st.column_config.TextColumn("Drug"),
-                "firm": st.column_config.TextColumn("Firm"),
-                "level": st.column_config.TextColumn("Match", help="How the recall links to the "
-                                                     "shortage listing, strongest first."),
-                "listing": st.column_config.TextColumn("Shortage listing", width="medium"),
-                "listings": st.column_config.NumberColumn("Listings", help="How many current "
-                                                          "shortage listings it links to."),
-                "root_cause": st.column_config.TextColumn("Root cause"),
-                "product": st.column_config.TextColumn("Product", width="large"),
-                "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is "
-                                                     "the most serious."),
-                "recall_number": st.column_config.TextColumn("Recall"),
-            })
-            st.caption("A same-drug-name match is a lead to check, not a confirmed overlap.")
+            # A wrapping, text-first board stays readable without horizontal table scrolling. It
+            # shows the strongest matches first, two lines each, and stops at BOARD_SIZE so a
+            # long window doesn't make a page-long board. The full table below keeps every recall.
+            for _, row in shown.head(BOARD_SIZE).iterrows():
+                st.divider()
+                with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                    st.markdown(f"**{row['drug']}**", width="content")
+                    st.badge(row["level"], color="gray" if row["level"] == MATCH_LABELS["drug"]
+                             else "primary")
+                listings = int(row["listings"])
+                st.text(f"{row['firm']}, reported {nice_date(row['reported'])}, {row['recall_number']}, "
+                        f"{row['class']}\nShortage listing: {row['listing']} ({listings} "
+                        f"listing{'' if listings == 1 else 's'}). Root cause: {row['root_cause']}")
+            st.divider()
+            if len(shown) > BOARD_SIZE:
+                st.markdown(f"Showing the {BOARD_SIZE} strongest matches. All {len(shown)} are in "
+                            "the full recall table and the download below.")
+            with st.expander("Full recall table"):
+                st.dataframe(shown, hide_index=True, width="stretch", column_config={
+                    "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
+                    "drug": st.column_config.TextColumn("Drug"),
+                    "firm": st.column_config.TextColumn("Firm"),
+                    "level": st.column_config.TextColumn("Match", help="How the recall links to the "
+                                                         "shortage listing, strongest first."),
+                    "listing": st.column_config.TextColumn("Shortage listing", width="medium"),
+                    "listings": st.column_config.NumberColumn("Listings", help="How many current "
+                                                              "shortage listings it links to."),
+                    "root_cause": st.column_config.TextColumn("Root cause"),
+                    "product": st.column_config.TextColumn("Product", width="large"),
+                    "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is "
+                                                         "the most serious."),
+                    "recall_number": st.column_config.TextColumn("Recall"),
+                })
             st.download_button("Download this list (CSV)", shown.to_csv(index=False).encode("utf-8"),
                                file_name=f"shortagesignal_exposure_{date.today()}.csv", mime="text/csv")
 
@@ -276,17 +306,23 @@ with flags:
                          "after the recall's report." if lead.get("median") else ".")
         st.markdown(sentence)
         if rates.get("watch"):
-            st.caption("From drugs recalled since 2020 that have had a full year since their report, "
+            st.markdown("From drugs recalled since 2020 that have had a full year since their report, "
                        "counting a shortage of the same drug given the same way. They describe this "
                        "dataset: FDA drops resolved shortages after a while, so older years are "
-                       "undercounted. Most watch flags never lead to a shortage, so this is a watch "
-                       "list, not a prediction.")
+                       "undercounted.")
+        st.markdown("Most watch flags never lead to a shortage, so this is a watch list, not a prediction.")
         also_low = st.checkbox("Also show low flags: recalls that are neither short nor injectable")
         view = recent[recent["flag"].isin(["watch", "low"] if also_low else ["watch"])].copy()
         view["flag"] = view["flag"].map(FLAG_LABELS)
         view["drug"] = view["drug"].fillna("(not named)").str.capitalize()
         view = view[["flag", "reported", "drug", "firm", "root_cause", "product", "class", "recall_number"]]
-        st.dataframe(view, hide_index=True, column_config={
+        with st.container(horizontal=True, gap="small"):
+            st.badge(FLAG_LABELS["watch"], color="orange")
+            if also_low:
+                st.badge(FLAG_LABELS["low"], color="gray")
+        st.dataframe(view, hide_index=True, width="stretch",
+                     column_order=["flag", "drug", "reported", "firm", "root_cause", "class",
+                                   "recall_number", "product"], column_config={
             "flag": st.column_config.TextColumn("Flag"),
             "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
             "drug": st.column_config.TextColumn("Drug"),
@@ -310,6 +346,7 @@ with flags:
 # ---------------------------------------------------------------- control chart
 
 with weekly:
+    st.subheader("Weekly recalls")
     chart = con.execute("""
         SELECT * FROM weekly_recalls
         WHERE week >= (SELECT max(week) FROM weekly_recalls) - INTERVAL 104 WEEK
@@ -317,32 +354,36 @@ with weekly:
     names = {"events": "Recall events", "center": "Average", "ucl": "Normal range", "lcl": "Normal range"}
     long = chart.melt(id_vars=["week"], value_vars=list(names), var_name="series", value_name="value")
     long["line"] = long["series"].map(names)
-    lines = alt.Chart(long).mark_line().encode(
+    lines = alt.Chart(long).mark_line(strokeWidth=2).encode(
         x=alt.X("week:T", title=None),
         y=alt.Y("value:Q", title="Recall events per week"),
-        color=alt.Color("line:N", title=None, legend=alt.Legend(orient="top"),
-                        scale=alt.Scale(domain=["Recall events", "Average", "Normal range"],
-                                        range=[BLUE, GRAY, RED])),
-        strokeDash=alt.condition(alt.datum.line == "Recall events", alt.value([1, 0]), alt.value([5, 4])),
+        color=alt.Color("line:N", title=None, legend=alt.Legend(orient="top", columns=2),
+                        scale=alt.Scale(domain=["Recall events", "Average", "Normal range"])),
+        strokeDash=alt.StrokeDash("line:N", legend=None,
+                                  scale=alt.Scale(domain=["Recall events", "Average", "Normal range"],
+                                                  range=[[1, 0], [2, 3], [7, 5]])),
         detail="series:N",
         tooltip=[alt.Tooltip("week:T", title="Week of"), alt.Tooltip("line:N", title="Line"),
                  alt.Tooltip("value:Q", title="Value", format=".1f")])
     unusual = alt.Chart(chart[chart["signal"].fillna("") != ""]).mark_point(
-        color=RED, size=110, filled=True).encode(
+        shape="diamond", size=110, filled=True).encode(
         x="week:T", y="events:Q",
+        color=alt.ColorDatum("Recall events"),
         tooltip=[alt.Tooltip("week:T", title="Unusual week of"), alt.Tooltip("events:Q", title="Recall events")])
-    st.altair_chart(lines + unusual)
-    with st.expander("How to read this"):
-        st.markdown(
+    st.markdown(
             "This is a control chart of recall events per week, by the week FDA reported them. "
-            "The red dashed lines mark the normal range, set from the two years before the last "
-            "13 weeks. A **red dot** is a week outside that range, which is worth a closer look. "
+            "The gray long-dashed lines mark the normal range, set from the two years before the last "
+            "13 weeks. A **blue diamond** is a week outside that range, which is worth a closer look. "
             "Events are counted instead of recall numbers, since one event can cover hundreds of "
             "products.")
+    st.altair_chart((lines + unusual).properties(height=320)
+                   .configure_axis(labelFontSize=13, titleFontSize=14)
+                   .configure_legend(labelFontSize=13), width="stretch")
 
 # ---------------------------------------------------------------- the analysis
 
 with follows:
+    st.subheader("What follows a recall")
     lag_sql = sql_file("lag_by_root_cause.sql")
     if lag_sql is None:
         st.info("sql/lag_by_root_cause.sql isn't in the repo yet.")
@@ -350,7 +391,7 @@ with follows:
         lag = con.execute(lag_sql).df()
         total, hit = int(lag["recalled_drugs"].sum()), int(lag["followed"].sum())
         overall = 100 * hit / total if total else 0
-        st.subheader(f"{overall:.1f}% of drugs recalled since 2020 were followed within a year by a "
+        st.markdown(f"**{overall:.1f}%** of drugs recalled since 2020 were followed within a year by a "
                      "shortage of the same drug that FDA still lists")
         line = f"{hit:,} of {total:,} recalled drugs, counting each drug in each recall event once."
         sterility = lag[lag["root_cause"] == "Sterility"]
@@ -360,18 +401,44 @@ with follows:
                      f"{s['pct_followed'] / overall:.1f} times the average")
             line += f", a median of {s['median_days']:.0f} days later." if pd.notna(s["median_days"]) else "."
         st.markdown(line)
-        lag["label"] = lag["pct_followed"].map(lambda v: f"{v:.1f}%")
+        st.markdown(
+            "Each drug in each recall event is followed for a year to see whether FDA posted a "
+            "shortage of that same drug. A pharmacy recalling 298 products that cover 40 drugs "
+            "counts as 40 recalled drugs, not 298 and not 1. Recalls whose drug couldn't be named "
+            "are left out. **Limits:** FDA's shortage feed mostly lists shortages that are still going "
+            "on, so ones that ended long ago are missing. Some links are by drug name only, so a "
+            "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
+            "since October 11, 2026, so every new shortage is kept from here on.")
+        # Each bar's share sits inside it, in the page's background color, so it reads on the
+        # bar in light and dark mode alike. A bar too short to hold it gets it just past its end,
+        # in the bar's own color. Both colors come from the theme's chart palette in
+        # .streamlit/config.toml, whose fourth color is the page background, and Streamlit
+        # applies the palette in the browser, so switching themes recolors the labels too.
+        lag["label"] = lag["pct_followed"].map("{:.1f}%".format)
+        lag["inside"] = lag["pct_followed"] >= 0.2 * lag["pct_followed"].max()
+        lag["series"] = "bar"
+        palette = alt.Scale(domain=["bar", "second", "third", "on bar"])
+        # The order is spelled out, largest share first: with three layers that filter their
+        # rows differently, a sort by value gets dropped and the bars fall back to A to Z.
+        order = lag.sort_values("pct_followed", ascending=False, kind="stable")["root_cause"].tolist()
         base = alt.Chart(lag).encode(
-            y=alt.Y("root_cause:N", sort="-x", title=None),
-            x=alt.X("pct_followed:Q", title="% of recalled drugs followed by a shortage within a year"))
+            y=alt.Y("root_cause:N", sort=order, title=None, axis=alt.Axis(labelLimit=210)),
+            x=alt.X("pct_followed:Q", title="Share (%)", axis=alt.Axis(tickCount=6, format=".1f")))
         bars = base.mark_bar().encode(
-            color=alt.condition(alt.datum.root_cause == "Sterility", alt.value(RED), alt.value(GRAY)),
+            color=alt.Color("series:N", scale=palette, legend=None),
             tooltip=[alt.Tooltip("root_cause:N", title="Root cause"),
                      alt.Tooltip("recalled_drugs:Q", title="Recalled drugs"),
                      alt.Tooltip("followed:Q", title="Followed by a shortage"),
                      alt.Tooltip("median_days:Q", title="Median days", format=".0f")])
-        st.altair_chart(bars + base.mark_text(align="left", dx=4).encode(text="label:N"))
-        st.dataframe(lag.drop(columns=["label"]), hide_index=True, column_config={
+        on_bar = base.mark_text(align="right", dx=-6, fontSize=13, fontWeight="bold").encode(
+            text="label:N", color=alt.ColorDatum("on bar")).transform_filter("datum.inside")
+        past_bar = base.mark_text(align="left", dx=4, fontSize=13, fontWeight="bold").encode(
+            text="label:N", color=alt.ColorDatum("bar")).transform_filter("!datum.inside")
+        st.altair_chart((bars + on_bar + past_bar)
+                       .properties(height=320)
+                       .configure_axis(labelFontSize=13, titleFontSize=14)
+                       .configure_legend(disable=True), width="stretch")
+        st.dataframe(lag.drop(columns=["label", "inside", "series"]), hide_index=True, width="stretch", column_config={
             "root_cause": st.column_config.TextColumn("Root cause"),
             "recalled_drugs": st.column_config.NumberColumn("Recalled drugs", format="%d"),
             "followed": st.column_config.NumberColumn("Followed by a shortage", format="%d"),
@@ -382,19 +449,11 @@ with follows:
     if backtest:
         with st.expander("How the risk flag did on past recalls"):
             st.markdown(backtest)
-    with st.expander("How to read this, and its limits"):
-        st.markdown(
-            "Each drug in each recall event is followed for a year to see whether FDA posted a "
-            "shortage of that same drug. A pharmacy recalling 298 products that cover 40 drugs "
-            "counts as 40 recalled drugs, not 298 and not 1. Recalls whose drug couldn't be named "
-            "are left out. **Limits:** FDA's shortage feed mostly lists shortages that are still going "
-            "on, so ones that ended long ago are missing. Some links are by drug name only, so a "
-            "few could be coincidence. The pipeline has kept a daily copy of the shortage list "
-            "since October 11, 2026, so every new shortage is kept from here on.")
 
 # ---------------------------------------------------------------- ask the data
 
 with asking:
+    st.subheader("Ask the data")
     passcode, api_key = (str(v) if v else None for v in (secret("ASK_PASSCODE"), secret("ANTHROPIC_API_KEY")))
     st.markdown("Ask a question in plain English. Claude writes one read-only SQL query over "
                 "the pipeline's tables, the app runs it, and Claude answers from the results. "
@@ -409,17 +468,19 @@ with asking:
                 st.session_state["ask_ok"] = True
                 st.rerun()
             else:
-                st.error("That passcode isn't right.")
+                st.info("That passcode isn't right.")
     else:
         counter = question_counter()
         if counter["day"] != today:
             counter.update(day=today, count=0)
-        st.caption("Try one: " + " · ".join(EXAMPLES))
-        question = st.text_input("Your question", placeholder=EXAMPLES[0], max_chars=300)
+        st.pills("Try one", EXAMPLES, key="ask_example", on_change=choose_example,
+                 width="stretch", wrap=True)
+        question = st.text_input("Your question", placeholder=EXAMPLES[0], max_chars=300,
+                                 key="ask_question")
         left = DAILY_QUESTIONS - counter["count"]
         if st.button("Ask", type="primary", disabled=not question.strip()):
             if left <= 0:
-                st.warning("Today's questions are used up. Try again tomorrow.")
+                st.info("Today's questions are used up. Try again tomorrow.")
             else:
                 import anthropic
 
@@ -429,17 +490,17 @@ with asking:
                 with st.spinner("Writing the query..."):
                     plan = ask.write_sql(client, question)
                 if plan is None:
-                    st.error("Couldn't reach Claude just now. Try again in a minute.")
+                    st.info("Couldn't reach Claude just now. Try again in a minute.")
                 elif not plan["sql"]:
                     st.info(f"The tables can't answer that one. {plan['explanation']}")
                 else:
                     try:
                         columns, rows = ask.run_query(sandbox(), plan["sql"])
                     except ValueError as exc:
-                        st.warning(f"The query was blocked, because {exc}.")
+                        st.info(f"The query was blocked, because {exc}.")
                         rows = None
                     except Exception as exc:
-                        st.warning(f"The query didn't run: {str(exc)[:200]}")
+                        st.info(f"The query didn't run: {str(exc)[:200]}")
                         rows = None
                     if rows is not None:
                         with st.spinner("Reading the results..."):
@@ -447,21 +508,34 @@ with asking:
                         if reply:
                             st.markdown(f"**{reply['text']}**")
                         # how Claude read the question matters most when it could mean two things
-                        st.caption(f"How Claude read the question: {plan['explanation']}")
-                        st.dataframe(pd.DataFrame(rows, columns=columns), hide_index=True)
+                        st.markdown(f"How Claude read the question: {plan['explanation']}")
+                        st.dataframe(pd.DataFrame(rows, columns=columns), hide_index=True, width="stretch")
                         spent = ask.cost([plan["tokens"]] + ([reply["tokens"]] if reply else []))
                         with st.expander("The SQL behind this answer"):
                             st.code(plan["sql"], language="sql")
-                        st.caption(f"Data as of {nice_date(updated)}, "
+                        st.markdown(f"Data as of {nice_date(updated)}, "
                                    f"{updated.hour % 12 or 12}:{updated:%M %p %Z}, and FDA's newest "
                                    f"recall report is from {nice_date(newest)}. This answer cost "
                                    f"about ${spent:.4f}.")
-        st.caption(f"{max(left, 0)} of {DAILY_QUESTIONS} questions left today. Queries can only "
+        st.markdown(f"{max(left, 0)} of {DAILY_QUESTIONS} questions left today. Queries can only "
                    "read the tables, and return at most 200 rows.")
 
 # ---------------------------------------------------------------- about
 
 with health:
+    st.subheader("Pipeline health")
+    # Keep this verdict tied to the last logged run, including failed runs.
+    # If check details are missing or stale, show the run status without claiming they passed.
+    verdict = f"The last logged run {run_status.lower()}"
+    try:
+        checks = pd.read_csv(fetch("check_log.csv"))
+        run_checks = checks[checks["run_at_utc"] == latest_run["run_at_utc"]]
+        if run_status == "Passed" and not run_checks.empty and run_checks["status"].eq("pass").all():
+            verdict = f"The last run passed all {len(run_checks)} checks"
+    except (requests.RequestException, OSError, KeyError, ValueError):
+        pass
+    st.markdown(f"**{verdict}, {nice_date(latest_run_time)}, "
+                f"{latest_run_time.hour % 12 or 12}:{latest_run_time:%M %p %Z}.**")
     st.markdown("Every daily run is logged with its numbers and its data checks. A run that fails "
                 "an error check saves nothing, so the dashboard keeps the day before's data.")
     runs = run_log.copy()
@@ -502,7 +576,7 @@ with health:
         st.dataframe(latest[["check", "severity", "status", "value", "detail"]]
                      .rename(columns=str.capitalize), hide_index=True, width="stretch")
     except (requests.RequestException, OSError, KeyError, ValueError):
-        st.caption("The check log isn't available right now.")
+        st.markdown("The check log isn't available right now.")
 
     try:
         made_by = con.execute(f"""
@@ -520,14 +594,16 @@ with health:
                                              "answers": "Answers", "latest": "Latest answer"}),
                      hide_index=True, width="stretch")
     except (requests.RequestException, OSError, duckdb.Error):
-        st.caption("The Claude caches aren't available right now.")
-    st.caption("Code version is the commit each run used, so any result can be traced to the code "
+        st.markdown("The Claude caches aren't available right now.")
+    st.markdown("Code version is the commit each run used, so any result can be traced to the code "
                f"that made it. Runs before mid-November 2026 don't have one. A failed run that "
                f"didn't get logged here is on the [Actions page]({REPO_URL}/actions).")
 
 with about:
+    st.subheader("About ShortageSignal")
     st.markdown("""
 **What runs every day, on GitHub Actions**
+
 1. Pulls FDA's drug recall reports, the drug shortage list and the NDC directory from openFDA.
 2. Works out which drug each recall is about: NDC codes, then the product text, then Claude
    Haiku for the rest, keeping only names that exist in the NDC directory, the shortage list
@@ -551,9 +627,21 @@ directory. Everything is public, and nothing here is medical advice.
 # ---------------------------------------------------------------- footer
 
 st.divider()
+st.markdown("**Dataset coverage**")
+a, b, c, d = st.columns(4)
+a.metric("Recalls since 2012", f"{int(last['recalls_total']):,}",
+         help="Every drug recall in FDA's enforcement reports since June 2012.")
+b.metric("Drug named", f"{float(last['recalls_named_pct']):.0f}%",
+         help="Recalls where the pipeline worked out which drug it is, from NDC codes, the "
+              "product text, or Claude.")
+c.metric("Recalls linked to a shortage", f"{int(last['recalls_linked']):,}",
+         help="Recalls of a drug that's on FDA's shortage list, by package, product, "
+              "drug and company, or drug.")
+d.metric("Shortages FDA lists today", f"{current:,}",
+         help="Current listings on FDA's drug shortage list.")
 links = [f"[GitHub]({GITHUB_PROFILE})", f"[Project code and docs]({REPO_URL})"]
 if LINKEDIN_URL:
     # A link without https:// would open as a page inside the app, so add it if it's missing.
     linkedin = LINKEDIN_URL if LINKEDIN_URL.startswith("http") else "https://" + LINKEDIN_URL
     links.insert(0, f"[LinkedIn]({linkedin})")
-st.caption("Built by Showrish Reddy Sampath · " + " · ".join(links))
+st.markdown("Built by Showrish Reddy Sampath · " + " · ".join(links))
