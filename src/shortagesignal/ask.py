@@ -14,7 +14,10 @@ The dashboard's "Ask the data" tab uses this module. How it stays safe and cheap
 
 The eval runs each test question's reference SQL to get today's right answer, so it never
 goes stale as the data changes. A question counts as right when every value in the
-reference answer shows up in Claude's result.
+reference answer shows up in Claude's result. Besides the plain questions, it asks trick
+ones: ambiguous questions, where any defensible reading counts as long as Claude says which
+it took, questions with a false premise, which it has to check rather than take as given, and
+questions the tables can't answer, which it has to decline.
 
 This module only needs duckdb and the anthropic SDK, so the dashboard can import it without
 installing the pipeline.
@@ -136,12 +139,19 @@ SQL_PROMPT = "\n".join([
     "and shortage_key. Never join recalls and shortages on drug names. If you must compare a "
     "drug across them, use shortages.drug_key, which is written the same way as recalls.drug.",
     "6. Keep results small: aggregate, sort, and add LIMIT 20 unless the question asks for more.",
-    "7. If the tables can't answer the question, leave sql empty and say why.",
+    "7. If the tables can't answer the question, leave sql empty and say why. Never write a "
+    "query that only returns a message.",
+    "8. If the question could mean more than one thing (recall numbers or recall events, the "
+    "report date or the start date, last calendar year or the last 12 months), pick the most "
+    "common reading and say which one in the explanation.",
+    "9. If the question assumes something, check it instead of taking it as given: query the "
+    "whole picture, so the answer can say whether the assumption holds.",
 ])
 
 ANSWER_PROMPT = ("Answer the question in one or two plain sentences, using only the query "
                  "results given. Include the key numbers. If the results are empty, say nothing "
-                 "matched. Don't add anything the results don't show.")
+                 "matched. If the question assumed something the results don't support, say so "
+                 "plainly. Don't add anything the results don't show.")
 
 SQL_TOOL = {
     "name": "answer_with_sql",
@@ -216,6 +226,16 @@ def cost(tokens):
     return sum(i * PRICE_IN + o * PRICE_OUT for i, o in tokens)
 
 
+STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
+READS_A_TABLE = re.compile(r"\bfrom\b", re.I)
+
+
+def reads_a_table(sql):
+    """Whether a query reads any table. One that only selects a message, like
+    SELECT 'no pricing data' AS note, is a decline written as a query."""
+    return bool(READS_A_TABLE.search(STRING_LITERAL.sub("''", sql)))
+
+
 def write_sql(client, question):
     """{"sql", "explanation", "tokens"} from Claude, or None if the call fails."""
     try:
@@ -228,9 +248,13 @@ def write_sql(client, question):
         return None
     for block in message.content:
         if getattr(block, "type", "") == "tool_use":
-            return {"sql": str(block.input.get("sql") or "").strip(),
-                    "explanation": str(block.input.get("explanation") or "").strip(),
-                    "tokens": _usage(message)}
+            sql = str(block.input.get("sql") or "").strip()
+            explanation = str(block.input.get("explanation") or "").strip()
+            if sql and not reads_a_table(sql):
+                # a decline written as a query: keep its message as the reason, and run nothing
+                said = " ".join(s[1:-1].replace("''", "'") for s in STRING_LITERAL.findall(sql))
+                sql, explanation = "", explanation or said
+            return {"sql": sql, "explanation": explanation, "tokens": _usage(message)}
     return None
 
 
@@ -307,6 +331,30 @@ EVAL_QUESTIONS = [
     ("What was the weather in Boston yesterday?", None, None),   # the tables can't answer this
 ]
 
+# (question, reference SQL, kind, the trick, whether declining also counts). For an ambiguous
+# question, the reference returns every defensible reading's answer, and any of them counts.
+TRICKS = ("ambiguous", "false premise", "can't be answered")
+TRICK_QUESTIONS = [
+    ("How many recalls were there last year?",
+     "SELECT COUNT(*) FROM recalls WHERE year(report_date) = year(current_date) - 1 "
+     "UNION ALL SELECT COUNT(DISTINCT event_id) FROM recalls WHERE year(report_date) = year(current_date) - 1 "
+     "UNION ALL SELECT COUNT(*) FROM recalls WHERE year(initiation_date) = year(current_date) - 1 "
+     "UNION ALL SELECT COUNT(DISTINCT event_id) FROM recalls WHERE year(initiation_date) = year(current_date) - 1 "
+     "UNION ALL SELECT COUNT(*) FROM recalls WHERE report_date > current_date - INTERVAL 365 DAY "
+     "UNION ALL SELECT COUNT(DISTINCT event_id) FROM recalls WHERE report_date > current_date - INTERVAL 365 DAY",
+     "value", "ambiguous", False),
+    ("How many sterility recalls have there been?",
+     "SELECT COUNT(*) FROM recalls WHERE root_cause = 'Sterility' "
+     "UNION ALL SELECT COUNT(DISTINCT event_id) FROM recalls WHERE root_cause = 'Sterility'",
+     "value", "ambiguous", False),
+    ("Why was every heparin recall reported in 2024 Class I?",
+     "SELECT DISTINCT recall_class FROM recalls WHERE drug ILIKE '%heparin%' AND year(report_date) = 2024",
+     "set", "false premise", False),
+    ("How many recall numbers did FDA report in 2031?",
+     "SELECT COUNT(*) FROM recalls WHERE year(report_date) = 2031", "value", "false premise", True),
+    ("What did hospitals pay for heparin in 2025?", None, None, "can't be answered", True),
+]
+
 
 def _norm(value):
     if value is None:
@@ -357,42 +405,62 @@ def report_eval():
         sys.exit("ANTHROPIC_API_KEY isn't set. Add it as a Codespaces secret, then reopen the codespace.")
     con = build_sandbox(paths)
 
+    questions = ([(q, ref, kind, None, ref is None) for q, ref, kind in EVAL_QUESTIONS]
+                 + list(TRICK_QUESTIONS))
     rows, tokens = [], []
-    print(f"Asking Claude {len(EVAL_QUESTIONS)} questions...")
-    for question, reference, kind in EVAL_QUESTIONS:
+    print(f"Asking Claude {len(questions)} questions...")
+    for question, reference, kind, trick, decline_ok in questions:
         answer = write_sql(client, question)
         if answer:
             tokens.append(answer["tokens"])
         sql = (answer or {}).get("sql", "")
-        if reference is None:                               # should decline
-            right, note = (not sql), "declined" if not sql else "should have declined"
+        explanation = (answer or {}).get("explanation", "")
+        if not answer:
+            right, note = False, "the call failed"
         elif not sql:
-            right, note = False, "declined"
+            right, note = decline_ok, "declined"
+        elif reference is None:
+            right, note = False, "should have declined"
         else:
             try:
                 _, got = run_query(con, sql)
                 _, expected = run_query(con, reference)
                 right = results_match(expected, got, kind)
-                note = "" if right else f"expected {[list(r) for r in expected][:3]}"
+                note = "" if right else f"expected {sorted((list(r) for r in expected), key=str)[:3]}"
             except Exception as exc:
                 right, note = False, f"error: {str(exc)[:80]}"
-        rows.append((question, right, sql, note))
+        if trick == "ambiguous" and sql:
+            note = (note + " " if note else "") + f"read it as: {explanation[:120]}"
+        rows.append((question, trick, right, sql, note))
 
-    score = sum(1 for _, right, _, _ in rows if right)
+    def score(group):
+        return sum(1 for r in group if r[2]), len(group)
+
+    plain = [r for r in rows if r[1] is None]
+    tricky = [r for r in rows if r[1] is not None]
+    (got_all, n_all), (got_plain, n_plain), (got_tricky, n_tricky) = score(rows), score(plain), score(tricky)
     lines = ["# Ask the data: eval", "",
-             f"Claude's SQL answered {score} of {len(rows)} test questions right "
-             f"({round(100 * score / len(rows))}%). Each reference answer is worked out from "
+             f"Claude's SQL answered {got_all} of {n_all} test questions right "
+             f"({round(100 * got_all / n_all)}%): {got_plain} of {n_plain} plain questions and "
+             f"{got_tricky} of {n_tricky} trick ones. Each reference answer is worked out from "
              "today's data, so the test never goes stale. For a question with one answer, "
              "Claude's top row has to hold it, and ties count. For a list, every value has to "
-             "show up. One question can't be answered from the tables, and the right answer "
-             "there is to decline.", "",
-             "| | Question | Note |", "|---|---|---|",
-             *[f"| {'✅' if right else '❌'} | {q} | {note} |" for q, right, _, note in rows],
+             "show up.", "",
+             "The trick questions are ambiguous ones, where any defensible reading counts as long "
+             "as Claude says which it took, ones with a false premise, which it has to check "
+             "rather than take as given, and ones the tables can't answer, which it has to "
+             "decline. A question about a year with no data can be declined or answered with "
+             "zero.", "",
+             "## Plain questions", "", "| | Question | Note |", "|---|---|---|",
+             *[f"| {'✅' if right else '❌'} | {q} | {note} |" for q, _, right, _, note in plain],
+             "", "## Trick questions", "", "| | Question | Trick | Note |", "|---|---|---|---|",
+             *[f"| {'✅' if right else '❌'} | {q} | {trick} | {note} |"
+               for q, trick, right, _, note in tricky],
              "", f"Model: {MODEL}. These questions cost about ${cost(tokens):.4f}."]
     out = ROOT / "audit" / "ask_eval.md"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
-    for question, right, sql, _ in rows:
+    for question, _, right, sql, _ in rows:
         if not right and sql:
             print(f"\nWrong: {question}\n  {sql}")
     print(f"\nSaved {out}")

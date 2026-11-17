@@ -8,6 +8,8 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - The run log records the commit of the code each run used
 - The risk log saves the drug and event each flag was matched to that day, and the forward test judges flags on them
 - The forward test reports 30, 90 and 180 days, each only on flags old enough, and lead time on its own
+- The Ask the data eval asks trick questions too: ambiguous ones, false premises and ones the tables can't answer, scored on their own
+- The Ask the data tab shows how Claude read each question and how fresh the data is, under every answer
 
 ### Changed
 - The dashboard says what the odds count, and that older years are undercounted, right under them

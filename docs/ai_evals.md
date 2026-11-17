@@ -43,16 +43,17 @@ ShortageSignal uses Claude Haiku for three jobs: tagging the root cause when the
 
 ## Ask the data
 
-**The job:** Claude writes one read-only SQL query over a locked, in-memory copy of six tables. The app runs it, then Claude answers from the rows it got back, and the SQL is shown under every answer. Queries can only read, return at most 200 rows, and sit behind a passcode with 50 questions a day, on a separate key in a workspace with a $1 monthly limit.
+**The job:** Claude writes one read-only SQL query over a locked, in-memory copy of six tables. The app runs it, then Claude answers from the rows it got back. Under every answer, the tab shows how Claude read the question, the rows, the SQL, and how fresh the data is. Queries can only read, return at most 200 rows, and sit behind a passcode with 50 questions a day, on a separate key in a workspace with a $1 monthly limit.
 
-**The test:** each of the 18 questions has a reference query that runs on the day's data. For a question with one answer, Claude's top row has to hold an accepted answer, and ties count. For a list, every value has to show up. One question can't be answered from the tables, and the right answer there is to decline.
+**The test:** 18 plain questions and 5 trick ones, each with a reference query that runs on the day's data. For a question with one answer, Claude's top row has to hold an accepted answer, and ties count. For a list, every value has to show up. The trick questions are the ones real users ask: 2 ambiguous ones, where any defensible reading counts as long as Claude says which it took, 2 with a false premise, which Claude has to check rather than take as given, and 1 the tables can't answer, which Claude has to decline, like the plain set's weather question.
 
-**The result:** 17 of 18. The miss is a wording ambiguity: asked which drugs on the shortage list had a recall, Claude listed the shortage list's names, while the reference listed the recall's names.
+**The result:** 22 of 23: 17 of 18 plain and 5 of 5 trick. The plain miss is a wording ambiguity in the test itself: asked which drugs on the shortage list had a recall, Claude listed the shortage list's names, while the reference listed the recall's names. It's kept as a miss rather than rewritten after the fact.
 
 **How it got there, since that's the useful part:**
 
 1. The first run scored 11 of 16. Two misses were right answers that the scorer rejected, because Claude returned a ranked list with the answer on top. One was a tie, one came from an ambiguous question, and one was a real data quirk, with categories stored as lists. Fixing those gave 16 of 16.
 2. The first live question still came back wrong. Asked which drugs on the shortage list were recalled lately, it said none, because Claude matched drug names across the two tables, and FDA's shortage names never equal the cleaned recall names. None of the 16 test questions crossed those two tables. A rule to always go through the links table, and two new test questions that do cross them, gave 17 of 18.
+3. The trick questions first scored 4 of 5. Both ambiguous questions passed, and Claude said how it read each one, by start date and for the previous calendar year. Both false premises passed: asked why every heparin recall in 2024 was Class I, it counted every class instead of assuming it. The miss was the price question: Claude knew the tables have no prices, but wrote that as a query, `SELECT 'The tables have no pricing…' AS note`, so the app would have shown the note as a table. The fix was in the app, not the test: a query that reads no table is now treated as a decline, with its message kept as the reason, and the prompt says never to write one. The rerun gave 5 of 5.
 
 The lesson: **an eval only catches what it asks about.** The test questions were written by the developer, so real questions will do worse, which is why the SQL is always on screen.
 
@@ -60,14 +61,14 @@ The lesson: **an eval only catches what it asks about.** The test questions were
 
 - **A normal day costs a fraction of a cent.** Each distinct text is asked once and cached, and every run's calls and cost are logged in `run_log.csv`.
 - **One-time backfills were the big spend.** About $1.70 of the $5 prepaid had been used by Oct 18, most of it naming drugs for past recalls ($1.57).
-- **Each chatbot question costs about 0.05 cents,** and each eval run costs under a cent.
+- **Each chatbot question costs about 0.05 cents,** and each eval run costs under a cent, about $0.007 for all 23 questions.
 
 ## What these tests can't tell you
 
 - **The samples are small.** There are 30 fresh recalls in all, and only 9 tagged by Claude.
 - **One person labeled everything.** There's no second labeler, and some categories have fuzzy edges, like CGMP against Other.
 - **The first audit tuned everything,** so only the fresh labels are a fair test, and they're one round.
-- **The chatbot's questions came from the developer,** not from real users.
+- **The chatbot's questions came from the developer,** not from real users. The trick questions cover the common ways real questions go wrong, but only 5 of them, and the eval scores the SQL, not the written answer.
 
 ## Run them yourself
 
@@ -75,7 +76,7 @@ The lesson: **an eval only catches what it asks about.** The test questions were
 python -m shortagesignal.tagging eval     # root causes, on the first audit
 python -m shortagesignal.extract eval     # drug names, on the first audit
 python -m shortagesignal.fresh score      # both, on the fresh labels
-python -m shortagesignal.ask eval         # the chatbot's 18 questions, costs under a cent
+python -m shortagesignal.ask eval         # the chatbot's 23 questions, costs under a cent
 ```
 
 The results are saved in `audit/`: `tagging_results.md`, `extraction_results.md`, `fresh_labels.md` and `ask_eval.md`.

@@ -8,6 +8,8 @@ import pytest
 from shortagesignal.ask import (
     build_sandbox,
     check_sql,
+    TRICK_QUESTIONS,
+    TRICKS,
     results_match,
     run_query,
     write_answer,
@@ -130,9 +132,32 @@ class FakeClient:
 
 
 def test_write_sql_and_write_answer_read_claudes_replies():
-    plan = write_sql(FakeClient({"sql": "SELECT 1", "explanation": "Counts one."}), "How many?")
-    assert (plan["sql"], plan["explanation"], plan["tokens"]) == ("SELECT 1", "Counts one.", (2000, 100))
+    plan = write_sql(FakeClient({"sql": "SELECT COUNT(*) FROM recalls", "explanation": "Counts recalls."}),
+                     "How many?")
+    assert (plan["sql"], plan["explanation"], plan["tokens"]) == (
+        "SELECT COUNT(*) FROM recalls", "Counts recalls.", (2000, 100))
     declined = write_sql(FakeClient({"sql": "", "explanation": "No weather data."}), "Weather?")
     assert declined["sql"] == ""
+    # a decline written as a query reads no table, so it's a decline, with its message kept
+    note = write_sql(FakeClient({"sql": "SELECT 'No pricing data, only what''s from FDA.' AS note",
+                                 "explanation": ""}), "Prices?")
+    assert (note["sql"], note["explanation"]) == ("", "No pricing data, only what's from FDA.")
     reply = write_answer(FakeClient(text=" 2 recalls. "), "How many?", "Counts recalls.", ["n"], [(2,)])
     assert reply["text"] == "2 recalls."
+
+
+def test_trick_questions_are_well_formed():
+    assert {trick for _, _, _, trick, _ in TRICK_QUESTIONS} == set(TRICKS)
+    for question, reference, kind, trick, decline_ok in TRICK_QUESTIONS:
+        assert question.endswith("?")
+        # only an unanswerable question has no reference, and it has to be declinable
+        assert (reference is None) == (trick == "can't be answered")
+        assert kind in ("value", "set") or reference is None
+        assert decline_ok or reference is not None
+
+
+def test_an_ambiguous_question_accepts_any_defensible_reading():
+    readings = [(2950,), (1210,), (2875,)]    # recall numbers, events, by start date
+    assert results_match(readings, [(1210, "recall events")], "value")
+    assert not results_match(readings, [(17,)], "value")
+

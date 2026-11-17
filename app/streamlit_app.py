@@ -399,12 +399,16 @@ with asking:
                             reply = ask.write_answer(client, question, plan["explanation"], columns, rows)
                         if reply:
                             st.markdown(f"**{reply['text']}**")
+                        # how Claude read the question matters most when it could mean two things
+                        st.caption(f"How Claude read the question: {plan['explanation']}")
                         st.dataframe(pd.DataFrame(rows, columns=columns), hide_index=True)
                         spent = ask.cost([plan["tokens"]] + ([reply["tokens"]] if reply else []))
                         with st.expander("The SQL behind this answer"):
-                            st.caption(plan["explanation"])
                             st.code(plan["sql"], language="sql")
-                        st.caption(f"This answer cost about ${spent:.4f}.")
+                        st.caption(f"Data as of {nice_date(updated)}, "
+                                   f"{updated.hour % 12 or 12}:{updated:%M %p %Z}, and FDA's newest "
+                                   f"recall report is from {nice_date(newest)}. This answer cost "
+                                   f"about ${spent:.4f}.")
         st.caption(f"{max(left, 0)} of {DAILY_QUESTIONS} questions left today. Queries can only "
                    "read the tables, and return at most 200 rows.")
 
