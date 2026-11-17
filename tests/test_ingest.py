@@ -40,8 +40,11 @@ def test_merge_recalls_keeps_latest_and_every_version(tmp_path):
         f"SELECT recall_number, status, _first_seen FROM read_parquet('{path.as_posix()}') ORDER BY 1"
     ).fetchall()
     assert latest == [("D-1", "Terminated", date(2026, 10, 1)), ("D-2", "Ongoing", date(2026, 10, 2))]
-    assert second == {"pulled": 3, "new": 1, "changed": 1, "total": 2, "no_number": 1}
-    assert third == {"pulled": 3, "new": 0, "changed": 0, "total": 2, "no_number": 1}
+    # the record with no recall number has nothing else to tell it apart by, no event and no
+    # product, so it's dropped and counted. One with an event and product would be kept under
+    # an NA- key, which test_recall_keys.py covers.
+    assert second == {"pulled": 3, "new": 1, "changed": 1, "total": 2, "no_number": 0, "dropped": 1}
+    assert third == {"pulled": 3, "new": 0, "changed": 0, "total": 2, "no_number": 0, "dropped": 1}
 
     n_versions = con.execute(
         f"SELECT count(*) FROM read_parquet('{versions.as_posix()}')"

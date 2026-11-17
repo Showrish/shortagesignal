@@ -99,7 +99,7 @@ SNAPSHOT_COLUMNS = [
 ]
 RUN_LOG_COLUMNS = [
     "run_at_utc", "status", "seconds", "recalls_mode", "recalls_pulled", "recalls_new",
-    "recalls_changed", "recalls_total", "shortage_rows", "shortages_new", "shortages_dropped",
+    "recalls_changed", "recalls_total", "recalls_without_number", "shortage_rows", "shortages_new", "shortages_dropped",
     "shortage_status_changes", "duplicate_listings_merged", "ndc_refreshed",
     "recalls_with_ndc_pct", "shortages_with_ndc_pct", "recalls_identified_pct",
     "recalls_unmatched", "recalls_linked", "shortages_linked", "recalls_named_pct_before",
@@ -183,6 +183,43 @@ def append_run_log(path, row):
 
 # ---------------------------------------------------------------- recalls
 
+# Recall numbers FDA sometimes gives instead of a real one. Recalls under one of these, or
+# under none, would all share one key and overwrite each other, so each gets its own instead.
+NO_NUMBER = ("", "n/a", "na", "none", "null", "-", "unknown", "tbd")
+
+
+def recall_key(row):
+    """The key a recall is stored under: its recall number, or, when FDA gave it none or a
+    placeholder like N/A, NA- and a fingerprint of its event and product text, so recalls
+    without a number don't overwrite each other and the same one gets the same key each day.
+    None when there's nothing to tell it apart by. Keep this in step with recall_key_sql."""
+    number = str(row.get("recall_number") or "").strip()
+    if number.lower() not in NO_NUMBER:
+        return number
+    if not (row.get("event_id") or row.get("product_description")):
+        return None
+    text = f"{row.get('event_id') or ''}|{row.get('product_description') or ''}"
+    return "NA-" + hashlib.md5(text.encode()).hexdigest()[:12]
+
+
+def recall_key_sql(columns):
+    """recall_key in SQL, for rows already stored, so an old N/A row is re-keyed, not lost.
+    columns are the stored table's, which may not have every recall field."""
+    def text(name):
+        return f"coalesce({name}, '')" if name in columns else "''"
+    placeholders = ", ".join(f"'{n}'" for n in NO_NUMBER)
+    return (f"CASE WHEN recall_number IS NULL OR lower(trim(recall_number)) IN ({placeholders}) "
+            f"THEN 'NA-' || substr(md5({text('event_id')} || '|' || {text('product_description')}), "
+            "1, 12) ELSE recall_number END")
+
+
+def _stored(con, path):
+    """A stored recall table, with every recall re-keyed the way recall_key keys a new one."""
+    source = f"read_parquet('{path.as_posix()}')"
+    columns = {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {source}").fetchall()}
+    return f"SELECT * REPLACE ({recall_key_sql(columns)} AS recall_number) FROM {source}"
+
+
 def merge_recalls(con, records, path, versions_path, today, now, workdir):
     """Merge a batch of recalls into storage.
 
@@ -192,14 +229,18 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
                        actually changes a recall's content
     """
     rows, columns = flatten(records)
+    for r in rows:
+        r["recall_number"] = recall_key(r)
     numbered = [r for r in rows if r.get("recall_number")]
-    no_number = len(rows) - len(numbered)
+    no_number = sum(1 for r in numbered if r["recall_number"].startswith("NA-"))
+    dropped = len(rows) - len(numbered)
 
     if not numbered:
         total = 0
         if path.exists():
             total = con.execute(f"SELECT count(*) FROM read_parquet('{path.as_posix()}')").fetchone()[0]
-        return {"pulled": len(rows), "new": 0, "changed": 0, "total": total, "no_number": no_number}
+        return {"pulled": len(rows), "new": 0, "changed": 0, "total": total,
+                "no_number": no_number, "dropped": dropped}
 
     # A fingerprint of the recall report itself. openfda is FDA's annotation layer, which
     # gets refreshed on its own schedule, so it's left out to avoid fake "changes".
@@ -216,27 +257,26 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
     if path.exists():
         new = con.execute(f"""
             SELECT count(DISTINCT recall_number) FROM recall_batch
-            WHERE recall_number NOT IN (SELECT recall_number FROM read_parquet('{path.as_posix()}'))
+            WHERE recall_number NOT IN (SELECT recall_number FROM ({_stored(con, path)}))
         """).fetchone()[0]
     else:
         new = con.execute("SELECT count(DISTINCT recall_number) FROM recall_batch").fetchone()[0]
 
     # Version history: keep a batch row only if we've never seen that exact content before.
-    v = versions_path.as_posix()
     if versions_path.exists():
         con.execute(f"""
             CREATE OR REPLACE TABLE recall_fresh AS
             SELECT DISTINCT * FROM recall_batch b
             WHERE NOT EXISTS (
-                SELECT 1 FROM read_parquet('{v}') o
+                SELECT 1 FROM ({_stored(con, versions_path)}) o
                 WHERE o.recall_number = b.recall_number AND o._content_hash = b._content_hash
             )
         """)
         changed = con.execute(f"""
             SELECT count(DISTINCT recall_number) FROM recall_fresh
-            WHERE recall_number IN (SELECT recall_number FROM read_parquet('{v}'))
+            WHERE recall_number IN (SELECT recall_number FROM ({_stored(con, versions_path)}))
         """).fetchone()[0]
-        write_parquet(con, f"SELECT * FROM read_parquet('{v}') "
+        write_parquet(con, f"{_stored(con, versions_path)} "
                            "UNION ALL BY NAME SELECT * FROM recall_fresh", versions_path)
     else:
         con.execute("CREATE OR REPLACE TABLE recall_fresh AS SELECT DISTINCT * FROM recall_batch")
@@ -246,8 +286,11 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
     # Latest table: the newest version of each recall wins, keeping the earliest first-seen date.
     source = "SELECT * FROM recall_batch"
     if path.exists():
-        source = (f"SELECT * FROM read_parquet('{path.as_posix()}') "
-                  "UNION ALL BY NAME SELECT * FROM recall_batch")
+        source = f"{_stored(con, path)} UNION ALL BY NAME SELECT * FROM recall_batch"
+        # A recall in the history but missing from the latest table was overwritten by another
+        # under the same placeholder number, so its latest version comes back.
+        source += (f" UNION ALL BY NAME SELECT * FROM ({_stored(con, versions_path)}) AS h "
+                   f"WHERE h.recall_number NOT IN (SELECT recall_number FROM ({_stored(con, path)}))")
     con.execute(f"""
         CREATE OR REPLACE TABLE recalls AS
         WITH combined AS ({source}),
@@ -264,7 +307,7 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
     write_parquet(con, "SELECT * FROM recalls ORDER BY recall_number", path)
     total = con.execute("SELECT count(*) FROM recalls").fetchone()[0]
     return {"pulled": len(rows), "new": new, "changed": changed, "total": total,
-            "no_number": no_number}
+            "no_number": no_number, "dropped": dropped}
 
 
 # ---------------------------------------------------------------- shortages
@@ -447,10 +490,12 @@ def run(data_dir, now, stats):
             r = merge_recalls(con, records, recalls, stage / RECALL_VERSIONS_PATH.name,
                               today, now, workdir)
             stats.update(recalls_mode=mode, recalls_pulled=r["pulled"], recalls_new=r["new"],
-                         recalls_changed=r["changed"], recalls_total=r["total"])
+                         recalls_changed=r["changed"], recalls_total=r["total"],
+                         recalls_without_number=r["no_number"])
             print(f"Recalls ({mode}): pulled {r['pulled']:,}, new {r['new']:,}, "
                   f"changed by FDA {r['changed']:,}, total {r['total']:,}, "
-                  f"skipped without a recall number {r['no_number']}")
+                  f"kept under an NA- key for having no recall number {r['no_number']}, "
+                  f"skipped with nothing to tell them apart {r['dropped']}")
 
             # 2. Shortages
             records = fetch_api("shortages")

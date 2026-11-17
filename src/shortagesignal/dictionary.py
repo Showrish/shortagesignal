@@ -30,7 +30,9 @@ YYYYMMDD = "as YYYYMMDD text"
 MMDDYYYY = "as MM/DD/YYYY text"
 
 RECALL_COLUMNS = {
-    "recall_number": "FDA's ID for one recalled product, like D-0598-2026.",
+    "recall_number": "FDA's ID for one recalled product, like D-0598-2026. When FDA gave none, "
+                     "or a placeholder like N/A, it's NA- and a fingerprint of the event and "
+                     "product text instead, so those recalls don't overwrite each other.",
     "event_id": "FDA's ID for the recall event. One event can cover hundreds of recall numbers, "
                 "like a pharmacy recalling everything it made.",
     "report_date": f"The week FDA published the recall in its enforcement report, {YYYYMMDD}.",
@@ -385,6 +387,7 @@ TABLES = [
          "recalls_new": "Recall numbers never stored before.",
          "recalls_changed": "Stored recalls FDA changed since the last version.",
          "recalls_total": "Recall numbers stored after the run.",
+         "recalls_without_number": "Pulled recalls FDA gave no recall number, or a placeholder like N/A. Each is kept under its own NA- key instead of overwriting the others.",
          "shortage_rows": "Listings in today's snapshot.",
          "shortages_new": "Listings that weren't in the last snapshot.",
          "shortages_dropped": "Listings that dropped off since the last snapshot.",
