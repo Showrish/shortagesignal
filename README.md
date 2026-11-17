@@ -2,7 +2,7 @@
 
 A daily, automated pipeline on real FDA data that links drug recalls to drug shortages, checks its own data, uses Claude to fill the gaps that rules can't, and shows what it finds on a live dashboard.
 
-**[Live dashboard](https://shortagesignal.streamlit.app)** · runs every day at 12:00 UTC on GitHub Actions · costs a fraction of a cent a day
+**[Live dashboard](https://shortagesignal.streamlit.app)** · runs every day at 12:23 UTC on GitHub Actions · costs a fraction of a cent a day
 
 ![The live dashboard's Risk flags tab](docs/images/dashboard.png)
 

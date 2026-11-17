@@ -353,3 +353,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Chose:** the Risk flags tab has two views under one time window. Current exposure lists recalls of a drug on FDA's shortage list right now, with how strong the match is, from the same package down to the same drug name only, and which listing it hits. Future monitoring lists the watch flags, with the backtest's odds, its lead time and its caveat next to them.
 - **Why:** one flag with three levels mixed a fact and a guess. A high flag says the drug is already short, which can be checked, while a watch flag says a shortage might come, which is a weak signal. Side by side, a reader couldn't tell which claim they were looking at, or how much to trust a high flag that rested on a drug-name match alone.
 - **Passed on:** dropping the low flags, which stay one checkbox away in the monitoring view, and changing the flag itself, which the backtest and the forward test are built on.
+
+## 2026-11-17: schedules off the top of the hour
+- **Chose:** the daily run starts at 12:23 UTC instead of 12:00, and the weekly digest at 13:41 instead of 13:00. The runbook says what to do when a day is skipped anyway.
+- **Why:** on Nov 17 the scheduled daily run never started, and the dashboard still showed the day before. GitHub says scheduled workflows can be delayed or dropped when it's busy, and the busiest time is the top of every hour. Keep-awake already ran at 17 past for the same reason.
+- **Passed on:** running twice a day to cover a skipped run, which would double the commits to the data branch for a problem a different minute mostly solves.

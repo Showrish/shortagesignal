@@ -1,9 +1,10 @@
 name: Weekly digest
 
-# Every Monday at 13:00 UTC, an hour after the daily run, and on demand from the Actions tab.
+# Every Monday at 13:41 UTC, after the daily run has had time to finish, and on demand from
+# the Actions tab. Not on the hour, where GitHub delays or skips scheduled runs.
 on:
   schedule:
-    - cron: "0 13 * * 1"
+    - cron: "41 13 * * 1"
   workflow_dispatch:
 
 permissions:

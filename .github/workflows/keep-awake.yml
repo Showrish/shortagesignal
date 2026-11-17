@@ -5,7 +5,7 @@ name: Keep the dashboard awake
 # unless the dashboard itself loads. A screenshot of what it saw is kept with each run.
 on:
   schedule:
-    - cron: "17 */4 * * *"   # every 4 hours, at 17 past, away from the daily run on the hour
+    - cron: "17 */4 * * *"   # every 4 hours, at 17 past, away from the daily run at 23 past
   workflow_dispatch:
 
 permissions:

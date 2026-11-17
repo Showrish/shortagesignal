@@ -13,6 +13,7 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - The Ask the data tab shows how Claude read each question and how fresh the data is, under every answer
 
 ### Changed
+- The daily run starts at 12:23 UTC and the weekly digest at 13:41 UTC, off the top of the hour, where GitHub delays or skips scheduled runs
 - The Risk flags tab splits into current exposure, with how strong each match is, and future monitoring, with the odds and lead time next to the watch flags
 - The dashboard says what the odds count, and that older years are undercounted, right under them
 - Every daily run works out the risk flag's backtest and saves it to the data branch, so the dashboard and the digest always quote today's numbers
