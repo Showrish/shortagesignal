@@ -1,0 +1,31 @@
+row,recall_number,shortage_key,match_level,recall_route,shortage_route,auto_route,auto_company
+1,D-0014-2024,"0409-9094-22|shortage|hospira, inc., a pfizer company",drug,,injectable,unknown,different
+2,D-1308-2022,"0641-6046-10|shortage|hikma pharmaceuticals usa, inc.",drug_and_firm,injectable,injectable,same,same
+3,D-0663-2022,"63323-452-01|shortage|fresenius kabi usa, llc",drug,injectable,injectable,same,different
+4,D-0472-2023,"0574-2415-65|shortage|noven pharmaceuticals, inc.",drug_and_firm,transdermal,,unknown,same
+5,D-0889-2022,"0574-2415-65|shortage|noven pharmaceuticals, inc.",drug_and_firm,transdermal,,unknown,same
+6,D-885-2015,"43066-027-10|shortage|caplin steriles, ltd.",drug,,injectable,unknown,different
+7,D-1286-2020,"0555-0971-02|shortage|teva pharmaceuticals usa, inc.",package,oral,oral,same,same
+8,D-0650-2017,"68180-557-09|shortage|lupin pharmaceuticals, inc.",package,oral,oral,same,same
+9,D-0052-2018,"62037-727-01|shortage|teva pharmaceuticals usa, inc.",drug_and_firm,oral,oral,same,same
+10,D-0437-2024,"42806-799-60|shortage|epic pharma, llc",drug,oral,oral,same,different
+11,D-1189-2018,55150-322-25|shortage|eugia us llc,drug,injectable,injectable,same,different
+12,D-0096-2017,"0409-4208-10|shortage|hospira, inc., a pfizer company",drug_and_firm,injectable,injectable,same,same
+13,D-0465-2018,"0641-6052-25|shortage|hikma pharmaceuticals usa, inc.",drug,,injectable,unknown,different
+14,D-099-2013,"0409-4278-01|shortage|hospira, inc., a pfizer company",package,injectable,injectable,same,different
+15,D-0407-2024,"0409-1283-37|shortage|hospira, inc., a pfizer company",drug,injectable,injectable,same,different
+16,D-0620-2020,55150-164-02|shortage|eugia us llc,drug,injectable,injectable,same,different
+17,D-923-2013,"63323-489-27|shortage|fresenius kabi usa, llc",drug,injectable,injectable,same,different
+18,D-0317-2022,"0641-6030-01|shortage|hikma pharmaceuticals usa, inc.",drug,injectable,injectable,same,different
+19,D-312-2013,"0574-2410-65|shortage|noven pharmaceuticals, inc.",drug_and_firm,transdermal,,unknown,same
+20,D-0382-2015,55150-255-20|shortage|eugia us llc,drug,injectable,injectable,same,different
+21,D-0437-2017,"0054-3294-46|shortage|hikma pharmaceuticals usa, inc.",package,oral,oral,same,different
+22,D-1316-2016,"0409-1890-01|shortage|hospira, inc., a pfizer company",drug,,injectable,unknown,different
+23,D-1444-2012,"0409-1283-37|shortage|hospira, inc., a pfizer company",product,injectable,injectable,same,different
+24,D-0835-2020,"0409-9094-55|shortage|hospira, inc., a pfizer company",product,injectable,injectable,same,different
+25,D-1585-2012,"0641-6126-25|shortage|hikma pharmaceuticals usa, inc.",drug,injectable,injectable,same,different
+26,D-1880-2019,"0641-6024-10|shortage|hikma pharmaceuticals usa, inc.",drug,,injectable,unknown,different
+27,D-0865-2016,"0409-6625-35|shortage|hospira, inc., a pfizer company",product,injectable,injectable,same,different
+28,D-0673-2025,70010-117-01|shortage|granules pharmaceuticals inc.,drug_and_firm,oral,oral,same,same
+29,D-1274-2019,72266-118-25|shortage|gland pharma limited,drug,injectable,injectable,same,different
+30,D-0460-2022,"17478-050-01|shortage|hikma pharmaceuticals usa, inc.",product,injectable,injectable,same,different
