@@ -263,7 +263,6 @@ def merge_recalls(con, records, path, versions_path, today, now, workdir):
         new = con.execute("SELECT count(DISTINCT recall_number) FROM recall_batch").fetchone()[0]
 
     # Version history: keep a batch row only if we've never seen that exact content before.
-    v = versions_path.as_posix()
     if versions_path.exists():
         con.execute(f"""
             CREATE OR REPLACE TABLE recall_fresh AS
