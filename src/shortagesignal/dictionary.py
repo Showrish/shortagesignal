@@ -317,6 +317,11 @@ TABLES = [
          "flag": "high, watch or low.",
          "points": "The points behind it.",
          "reasons": "The signs behind the points.",
+         "event_id": "The recall event it belonged to on the day of the flag. Blank for flags "
+                     "logged before mid-November 2026, which use today's.",
+         "drug_key": "The drug it was matched to on the day of the flag, so a later renaming "
+                     "can't change what the flag is judged on. Blank when it had no drug name, "
+                     "or for flags logged before mid-November 2026, which use today's.",
      }},
     {"file": "drug_makers.parquet", "name": "drug_makers",
      "row": "one drug in the NDC directory, with how many companies list it",

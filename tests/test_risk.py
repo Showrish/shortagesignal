@@ -128,6 +128,24 @@ def test_build_risk_scores_every_recall_and_logs_new_ones_once(tmp_path):
         rows = list(csv.DictReader(f))
     assert [(r["recall_number"], r["flag"], r["flagged_on"]) for r in rows] == [
         ("D-1", "watch", "2026-10-16"), ("D-3", "low", "2026-10-16")]
+    # the drug and event are saved as they were that day, blank when there's no drug name
+    assert [(r["event_id"], r["drug_key"]) for r in rows] == [("1", "heparin sodium"), ("3", "")]
+
+
+def test_an_older_risk_log_gets_the_new_columns_and_keeps_its_rows(tmp_path):
+    con, today = duckdb.connect(), date(2026, 10, 16)
+    p = _risk_fixture(con, tmp_path, today)
+    log = tmp_path / "risk_log.csv"
+    log.write_text("recall_number,report_date,flagged_on,flag,points,reasons\n"
+                   "D-9,20261001,2026-10-02,low,0,\n", encoding="utf-8")
+    build_risk(p["recalls"], p["root_causes"], p["recall_drugs"], p["ndc"], p["risk"], p["makers"],
+               log, tmp_path, today, links_path=p["links"])
+    with open(log, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert reader.fieldnames[-2:] == ["event_id", "drug_key"]
+    assert (rows[0]["recall_number"], rows[0]["flag"], rows[0]["drug_key"]) == ("D-9", "low", "")
+    assert [r["recall_number"] for r in rows] == ["D-9", "D-1", "D-3"]
 
 
 def test_control_chart_fills_empty_weeks_and_flags_a_spike(tmp_path):
@@ -304,6 +322,41 @@ def test_log_units_follows_each_drug_from_the_day_it_was_flagged(tmp_path):
     assert log_units(con, risk, links, tmp_path / "missing.csv") == ([], 0)
 
 
+def test_log_units_judges_a_flag_on_the_name_saved_with_it(tmp_path):
+    con = duckdb.connect()
+    risk, links, log = tmp_path / "risk.parquet", tmp_path / "links.parquet", tmp_path / "risk_log.csv"
+    # since the flag, the pipeline renamed D-7's drug and moved D-8 to another event
+    save(con, [{"recall_number": "D-7", "event_id": "e9", "drug_key": "heparin sodium"},
+               {"recall_number": "D-8", "event_id": "e2", "drug_key": "carboplatin"}], risk, tmp_path)
+    save(con, [{"recall_number": "D-7", "shortage_list_type": "shortage",
+                "shortage_posted": "12/01/2026"}], links, tmp_path)
+    with open(log, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["recall_number", "report_date", "flagged_on", "flag", "points", "reasons",
+                         "event_id", "drug_key"])
+        writer.writerows([["D-7", "20261020", "2026-10-27", "watch", "1", "injectable", "e9", "heparin"],
+                          ["D-8", "20261020", "2026-10-27", "low", "0", "", "", ""]])  # logged before saving
+    units, unnamed = log_units(con, risk, links, log)
+    found = {u["drug_key"]: (u["event_id"], u["saved"], u["first_posted"]) for u in units}
+    assert found == {"heparin": ("e9", True, date(2026, 12, 1)),      # the name it had that day
+                     "carboplatin": ("e2", False, None)}             # today's, since none was saved
+    assert unnamed == 0
+    result = judge_log(units, date(2026, 11, 7))
+    assert result["names_today"] == 1
+
+
+def test_judge_log_counts_each_horizon_only_on_flags_old_enough():
+    units = [_unit("watch", date(2026, 10, 27), date(2026, 12, 1), "heparin"),    # 35 days after
+             _unit("low", date(2026, 10, 27), None, "aspirin"),
+             _unit("watch", date(2027, 1, 20), None, "lidocaine")]               # only 12 days old
+    result = judge_log(units, date(2027, 2, 1))       # 97 days after Oct 27
+    h = result["horizons"]
+    assert (h[30]["watch"]["done"], h[30]["watch"]["followed"]) == (1, 0)     # posted on day 35
+    assert (h[90]["watch"]["done"], h[90]["watch"]["followed"]) == (1, 1)
+    assert (h[90]["low"]["done"], h[180]["watch"]["done"]) == (1, 0)           # 180 isn't done yet
+    assert result["lead_days"]["median"] == 35
+
+
 def _unit(flag, flagged_on, first_posted=None, key="a drug"):
     return {"event_id": "e", "drug_key": key, "flag": flag, "flagged_on": flagged_on,
             "first_posted": first_posted}
@@ -349,4 +402,6 @@ def test_check_report_says_it_in_plain_words():
     assert "expects about 1.9% for watch and 0.9% for low" in text    # any link, like this test
     assert "No recall was logged under the old points." in text
     assert "1 logged recall has no drug name" in text
+    assert "| 30 | none done yet | none done yet | none done yet |" in text
+    assert "**Lead time:** no flag has been followed yet." in text
 

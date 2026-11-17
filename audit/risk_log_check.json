@@ -1,5 +1,5 @@
 {
-  "checked_on": "2026-11-08",
+  "checked_on": "2026-11-17",
   "since": "2026-10-26",
   "window_days": 365,
   "verdict": "too early",
@@ -15,21 +15,21 @@
       "followed_already": 0
     },
     "watch": {
-      "recalled_drugs": 6,
+      "recalled_drugs": 8,
       "full_year": 0,
       "followed": 0,
       "rate": null,
       "range": null,
-      "in_their_year": 6,
+      "in_their_year": 8,
       "followed_already": 0
     },
     "low": {
-      "recalled_drugs": 11,
+      "recalled_drugs": 23,
       "full_year": 0,
       "followed": 0,
       "rate": null,
       "range": null,
-      "in_their_year": 11,
+      "in_their_year": 23,
       "followed_already": 0
     }
   },
@@ -38,5 +38,77 @@
     "recalled_drugs": 43,
     "followed": 0
   },
-  "no_drug_name": 9
+  "no_drug_name": 27,
+  "judged_on_todays_name": 32,
+  "lead_days": null,
+  "horizons": {
+    "30": {
+      "high": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "watch": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "low": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      }
+    },
+    "90": {
+      "high": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "watch": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "low": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      }
+    },
+    "180": {
+      "high": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "watch": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "low": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      }
+    },
+    "365": {
+      "high": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "watch": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      },
+      "low": {
+        "done": 0,
+        "followed": 0,
+        "rate": null
+      }
+    }
+  }
 }

@@ -253,6 +253,13 @@ def forward_line(forward):
              f"{since:%b} {since.day}, {since.year} {'is' if n == 1 else 'are'} being followed")
     if forward["verdict"] == "too early":
         line = f"{start}, and it's too early to judge, since a flag needs a full year."
+        finished = [(h, row) for h, row in (forward.get("horizons") or {}).items()
+                    if h < forward["days"] and row["watch"]["done"] and row["low"]["done"]]
+        if finished:
+            h, row = finished[-1]
+            line += (f" After {h} days, {row['watch']['followed']:,} of {row['watch']['done']:,} "
+                     f"watch and {row['low']['followed']:,} of {row['low']['done']:,} low flags "
+                     "had been followed.")
         when = forward["first_full_year"]
         if when and not (table["watch"]["full_year"] or table["low"]["full_year"]):
             line += f" The first ones finish on {when:%b} {when.day}, {when.year}."
