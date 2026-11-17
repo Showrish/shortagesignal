@@ -408,6 +408,7 @@ TABLES = [
          "weekly_signal": "above or below when that week is outside the control limits.",
          "checks_warned": "Data checks that warned.",
          "checks_failed": "Data checks that failed. Any failure stops the run before saving.",
+         "code_version": "The commit of the code that ran, or local for a run outside GitHub Actions. Blank before mid-November 2026.",
          "error": "What went wrong, when the run failed.",
      }},
     {"file": "check_log.csv", "name": None,

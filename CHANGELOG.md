@@ -3,7 +3,12 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+### Added
+- A Pipeline health tab on the dashboard: recent runs, the latest data checks, data freshness, and the code and Claude versions behind the numbers
+- The run log records the commit of the code each run used
+
 ### Changed
+- The dashboard says what the odds count, and that older years are undercounted, right under them
 - Every daily run works out the risk flag's backtest and saves it to the data branch, so the dashboard and the digest always quote today's numbers
 - The backtest starts each recall's year on its report date, counts only recalls with a full year since, counts a shortage three ways (any link, the same route, the same company) with the same route as the headline, and compares the watch flag with flagging every recall on precision, share caught, review work and lead time
 
