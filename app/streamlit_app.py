@@ -52,6 +52,8 @@ VIEWS = {   # table name in the SQL -> file on the data branch
 # One palette for every chart
 BLUE, GRAY, RED, ORANGE = "#2E6FD8", "#8C8C8C", "#D64545", "#E8913A"
 FLAG_LABELS = {"high": "🔴 High", "watch": "🟠 Watch", "low": "⚪ Low"}
+MATCH_LABELS = {"package": "Same package", "product": "Same product",
+                "drug_and_firm": "Same drug and company", "drug": "Same drug name only"}
 DAILY_QUESTIONS = 50
 EXAMPLES = [
     "Which root causes had the most recall events in 2025?",
@@ -187,78 +189,123 @@ flags, weekly, follows, asking, health, about = st.tabs(
 # ---------------------------------------------------------------- risk flags
 
 with flags:
-    left, right = st.columns([1, 2])
-    days = left.selectbox("Recalls reported in the last", [30, 90, 365],
-                          format_func=lambda n: f"{n} days")
-    levels = right.multiselect("Flags", ["high", "watch", "low"], default=["high", "watch"],
-                               format_func=lambda f: FLAG_LABELS[f])
-    recent = con.execute("""
-        SELECT k.flag, k.points,
-               TRY_STRPTIME(k.report_date, '%Y%m%d')::DATE AS reported,
-               k.recall_number, r.recalling_firm AS firm, k.drug_key AS drug, k.root_cause,
-               k.reasons, k.recall_class AS class, r.product_description AS product
+    days = st.selectbox("Recalls reported in the last", [30, 60, 90, 365], index=1, format_func=lambda n: f"{n} days")
+    since = date.today() - timedelta(days=days)
+    st.markdown("Two different questions. **Current exposure:** which recalls hit a drug that's "
+                "already short, and how sure is the match? **Future monitoring:** which recalls are "
+                "worth watching for a shortage that hasn't happened yet?")
+    # current exposure: a link to a listing FDA has on its shortage list now, the same test the
+    # high flag uses, with the strongest link first (1 is the same package, 4 the same drug name)
+    exposed = con.execute("""
+        WITH now_short AS (
+            SELECT recall_number, min(match_rank) AS best,
+                   arg_min(match_level, match_rank) AS level,
+                   arg_min(shortage_generic_name, match_rank) AS listing,
+                   count(DISTINCT shortage_key) AS listings
+            FROM links
+            WHERE shortage_list_type = 'shortage' AND lower(shortage_status) = 'current'
+            GROUP BY recall_number
+        )
+        SELECT TRY_STRPTIME(k.report_date, '%Y%m%d')::DATE AS reported, k.drug_key AS drug,
+               r.recalling_firm AS firm, n.level, n.listing, n.listings, k.root_cause,
+               r.product_description AS product, k.recall_class AS class, k.recall_number
         FROM recall_risk AS k
         INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+        INNER JOIN now_short AS n ON n.recall_number = k.recall_number
         WHERE TRY_STRPTIME(k.report_date, '%Y%m%d') >= ?
-        ORDER BY k.points DESC, reported DESC
-    """, [date.today() - timedelta(days=days)]).df()
-    counts = recent["flag"].value_counts()
-    x, y, z = st.columns(3)
-    x.metric("🔴 High", int(counts.get("high", 0)), help="The drug is already on FDA's shortage list.")
-    y.metric("🟠 Watch", int(counts.get("watch", 0)), help="An injectable.")
-    z.metric("⚪ Low", int(counts.get("low", 0)), help="Neither.")
+        ORDER BY n.best, reported DESC
+    """, [since]).df()
+    recent = con.execute("""
+        SELECT k.flag, TRY_STRPTIME(k.report_date, '%Y%m%d')::DATE AS reported, k.recall_number,
+               r.recalling_firm AS firm, k.drug_key AS drug, k.root_cause, k.recall_class AS class,
+               r.product_description AS product
+        FROM recall_risk AS k
+        INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+        WHERE TRY_STRPTIME(k.report_date, '%Y%m%d') >= ? AND k.flag IN ('watch', 'low')
+        ORDER BY reported DESC
+    """, [since]).df()
+    watch_count = int((recent["flag"] == "watch").sum())
+    exposure, monitoring = st.tabs([f"🔴 Current exposure ({len(exposed)})",
+                                    f"🟠 Future monitoring ({watch_count})"])
 
-    # what the flags mean, always on screen, with the odds from the latest backtest
-    rates = (backtest_numbers() or {}).get("rate_by_flag", {})
-    odds = ""
-    if rates.get("watch") and rates.get("low"):
-        # both with one decimal, so the two numbers read the same way
-        odds = (f". {100 * rates['watch']:.1f} in 100 see their drug go short within a year, "
-                f"against {100 * rates['low']:.1f} in 100 for other recalls")
-    st.markdown("🔴 **High:** the drug is already short, so this recall can make it worse. "
-                f"🟠 **Watch:** an injectable{odds}. ⚪ **Low:** neither.")
-    if odds:
-        st.caption("The odds count drugs recalled since 2020 that have had a full year since their "
-                   "report, and a shortage of the same drug given the same way. They describe this "
-                   "dataset: FDA drops resolved shortages after a while, so older years are "
-                   "undercounted.")
-    if not counts.get("high", 0):
-        st.caption(f"No recall in the last {days} days hit a drug that's already short.")
+    with exposure:
+        st.markdown("Recalls of a drug that's **on FDA's shortage list right now**, so the recall can "
+                    "make that shortage worse. That's a fact, not a prediction. The strongest match "
+                    "comes first.")
+        if exposed.empty:
+            st.caption(f"No recall in the last {days} days hit a drug that's already short.")
+        else:
+            by_level = exposed["level"].value_counts()
+            a, b, c = st.columns(3)
+            a.metric("Same product or package", int(by_level.get("package", 0) + by_level.get("product", 0)),
+                     help="The recall's NDC codes match the shortage listing's.")
+            b.metric("Same drug and company", int(by_level.get("drug_and_firm", 0)))
+            c.metric("Same drug name only", int(by_level.get("drug", 0)),
+                     help="The weakest match: it can join different products, like an injection "
+                          "and a patch of the same drug.")
+            shown = exposed.copy()
+            shown["level"] = shown["level"].map(MATCH_LABELS)
+            shown["drug"] = shown["drug"].fillna("(not named)").str.capitalize()
+            st.dataframe(shown, hide_index=True, column_config={
+                "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
+                "drug": st.column_config.TextColumn("Drug"),
+                "firm": st.column_config.TextColumn("Firm"),
+                "level": st.column_config.TextColumn("Match", help="How the recall links to the "
+                                                     "shortage listing, strongest first."),
+                "listing": st.column_config.TextColumn("Shortage listing", width="medium"),
+                "listings": st.column_config.NumberColumn("Listings", help="How many current "
+                                                          "shortage listings it links to."),
+                "root_cause": st.column_config.TextColumn("Root cause"),
+                "product": st.column_config.TextColumn("Product", width="large"),
+                "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is "
+                                                     "the most serious."),
+                "recall_number": st.column_config.TextColumn("Recall"),
+            })
+            st.caption("A same-drug-name match is a lead to check, not a confirmed overlap.")
+            st.download_button("Download this list (CSV)", shown.to_csv(index=False).encode("utf-8"),
+                               file_name=f"shortagesignal_exposure_{date.today()}.csv", mime="text/csv")
 
-    view = recent[recent["flag"].isin(levels)].copy()
-    view["flag"] = view["flag"].map(FLAG_LABELS)
-    view["drug"] = view["drug"].fillna("(not named)").str.capitalize()
-    view["reasons"] = view["reasons"].fillna("").str.capitalize()
-    # the columns people read first, then the details
-    view = view[["flag", "reported", "drug", "firm", "reasons", "root_cause", "product", "class",
-                 "recall_number"]]
-    st.dataframe(view, hide_index=True, column_config={
-        "flag": st.column_config.TextColumn("Flag"),
-        "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
-        "drug": st.column_config.TextColumn("Drug"),
-        "firm": st.column_config.TextColumn("Firm"),
-        "reasons": st.column_config.TextColumn("Why flagged", width="large"),
-        "root_cause": st.column_config.TextColumn("Root cause"),
-        "product": st.column_config.TextColumn("Product", width="large"),
-        "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the most serious."),
-        "recall_number": st.column_config.TextColumn("Recall"),
-    })
-    st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
-                       file_name=f"shortagesignal_flags_{date.today()}.csv", mime="text/csv")
-    rate_sentence = ""
-    if rates.get("watch") and rates.get("low"):
-        rate_sentence = (f"On drugs recalled since 2020, **{rates['watch']:.1%}** of injectables were "
-                         f"followed within a year by a shortage of the same drug, against "
-                         f"**{rates['low']:.1%}** of other recalls. ")
-    with st.expander("How to read this"):
-        st.markdown(
-            "**High** means the recalled drug is on FDA's shortage list right now, so the recall "
-            "can make that shortage worse. That's a fact, not a prediction.\n\n"
-            "**Watch** means an injectable, the one sign that held up when each drug in each "
-            "recall event was counted on its own. " + rate_sentence +
-            "Most recalls never lead to a shortage, so this is a watch list, not a prediction.\n\n"
-            "Sterility problems and drugs with few makers used to add points too. Neither held up, "
-            "so they're shown as facts but no longer change the flag.")
+    with monitoring:
+        bt = backtest_numbers() or {}
+        rates, lead = bt.get("rate_by_flag", {}), bt.get("lead_days") or {}
+        sentence = "🟠 **Watch:** an injectable whose drug isn't short now."
+        if rates.get("watch") and rates.get("low"):
+            sentence += (f" {100 * rates['watch']:.1f} in 100 see their drug go short within a year, "
+                         f"against {100 * rates['low']:.1f} in 100 for other recalls")
+            sentence += (f", and when it happens, the shortage comes a median of {lead['median']} days "
+                         "after the recall's report." if lead.get("median") else ".")
+        st.markdown(sentence)
+        if rates.get("watch"):
+            st.caption("From drugs recalled since 2020 that have had a full year since their report, "
+                       "counting a shortage of the same drug given the same way. They describe this "
+                       "dataset: FDA drops resolved shortages after a while, so older years are "
+                       "undercounted. Most watch flags never lead to a shortage, so this is a watch "
+                       "list, not a prediction.")
+        also_low = st.checkbox("Also show low flags: recalls that are neither short nor injectable")
+        view = recent[recent["flag"].isin(["watch", "low"] if also_low else ["watch"])].copy()
+        view["flag"] = view["flag"].map(FLAG_LABELS)
+        view["drug"] = view["drug"].fillna("(not named)").str.capitalize()
+        view = view[["flag", "reported", "drug", "firm", "root_cause", "product", "class", "recall_number"]]
+        st.dataframe(view, hide_index=True, column_config={
+            "flag": st.column_config.TextColumn("Flag"),
+            "reported": st.column_config.DateColumn("Reported", format="MMM D, YYYY"),
+            "drug": st.column_config.TextColumn("Drug"),
+            "firm": st.column_config.TextColumn("Firm"),
+            "root_cause": st.column_config.TextColumn("Root cause"),
+            "product": st.column_config.TextColumn("Product", width="large"),
+            "class": st.column_config.TextColumn("Class", help="FDA's recall class. Class I is the "
+                                                 "most serious."),
+            "recall_number": st.column_config.TextColumn("Recall"),
+        })
+        st.download_button("Download this list (CSV)", view.to_csv(index=False).encode("utf-8"),
+                           file_name=f"shortagesignal_watch_{date.today()}.csv", mime="text/csv")
+        with st.expander("Why only injectables"):
+            st.markdown("Injectables were the one sign that held up when each drug in each recall "
+                        "event was counted on its own, with each year starting on the recall's report "
+                        "date. Sterility problems and drugs with few makers used to count too. Neither "
+                        "held up, so they're shown as facts but don't change the flag. The flag is "
+                        "also being tested on new recalls as they come in, which the Monday digest "
+                        "reports.")
 
 # ---------------------------------------------------------------- control chart
 
@@ -488,7 +535,8 @@ with about:
 3. Tags why each recall happened: SQL rules first, then Claude Haiku, scored against a hand
    audit of 99 recalls.
 4. Links recalls to shortages of the same drug, by package, product, drug and firm, or drug.
-5. Flags each recall's shortage risk and charts weekly recall events.
+5. Splits recent recalls into current exposure, a drug that's already short, and future
+   monitoring, an injectable worth watching, and charts weekly recall events.
 6. Runs 16 data quality checks, and saves nothing if one fails.
 
 Every Monday, a digest of the week goes out by email, with an Excel list of items that need a
