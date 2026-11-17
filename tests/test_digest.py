@@ -158,6 +158,13 @@ def test_compose_reports_the_forward_test():
     assert ("Testing the flag on new recalls: 2 recalled drugs flagged since Oct 26, 2026 are "
             "being followed, and it's too early to judge") in text
     assert "The first ones finish on Oct 27, 2027." in text
+    assert "After" not in text.split("too early to judge")[1].split("\n")[0]   # no horizon done yet
+
+    # once a horizon has finished for both watch and low, the line says how it went
+    units[0]["first_posted"] = date(2026, 12, 1)
+    facts["forward"] = judge_log(units, date(2027, 2, 1))
+    text = to_text(*compose(facts))
+    assert "After 90 days, 1 of 1 watch and 0 of 1 low flags had been followed." in text
 
 
 def test_workbook_has_a_sheet_per_list(tmp_path):

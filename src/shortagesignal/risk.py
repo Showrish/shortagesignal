@@ -101,7 +101,9 @@ NOT_INJECTED = re.compile(r"ophthalmic|\beyes?\b|\botic\b|\bears?\b|nasal|inhal"
 REPACKAGER = re.compile(r"repack|relabel", re.I)
 RISK_COLUMNS = ["recall_number", "event_id", "report_date", "recall_class", "root_cause",
                 "drug_key", "labelers", "injectable", "in_shortage", "points", "flag", "reasons"]
-LOG_COLUMNS = ["recall_number", "report_date", "flagged_on", "flag", "points", "reasons"]
+LOG_COLUMNS = ["recall_number", "report_date", "flagged_on", "flag", "points", "reasons",
+               "event_id", "drug_key"]   # the drug and event as they were on the day of the flag
+HORIZONS = (30, 90, 180, 365)
 WEEKLY_COLUMNS = ["week", "events", "recalls", "center", "ucl", "lcl", "signal"]
 LEVELS = ["high", "watch", "low"]
 
@@ -194,21 +196,28 @@ def build_risk(recalls_path, root_causes_path, recall_drugs_path, ndc_path, risk
         FROM recall_risk ORDER BY recall_number
     """, risk_path)
 
-    # Recalls reported in the last 30 days go into the log once, with the flag they got then.
-    logged = set()
-    if log_path.exists():
+    # Recalls reported in the last 30 days go into the log once, with the flag they got then,
+    # and the drug and event they were matched to then, so a later renaming can't change what
+    # the flag is judged on. A log from before those columns gets them added, with old rows
+    # left blank, which the forward test reads as "use today's name".
+    old_rows, header_ok = [], False
+    if log_path.exists() and log_path.stat().st_size:
         with open(log_path, newline="", encoding="utf-8") as f:
-            logged = {r["recall_number"] for r in csv.DictReader(f)}
+            reader = csv.DictReader(f)
+            header_ok = reader.fieldnames == LOG_COLUMNS
+            old_rows = list(reader)
+    logged = {r["recall_number"] for r in old_rows}
     since = today - timedelta(days=30)
     recent = [r for r in scored if (_parse_day(r["report_date"]) or date.min) >= since]
     new = [r for r in recent if r["recall_number"] not in logged]
-    needs_header = not log_path.exists() or log_path.stat().st_size == 0
-    if new or needs_header:
-        with open(log_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=LOG_COLUMNS, extrasaction="ignore")
-            if needs_header:
+    if new or not header_ok:
+        with open(log_path, "a" if header_ok else "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=LOG_COLUMNS, restval="", extrasaction="ignore")
+            if not header_ok:
                 writer.writeheader()
-            writer.writerows({**r, "flagged_on": today.isoformat()} for r in new)
+                writer.writerows(old_rows)
+            writer.writerows({**r, "flagged_on": today.isoformat(), "drug_key": r["drug_key"] or ""}
+                             for r in new)
 
     def by_flag(group):
         return {level: sum(1 for r in group if r["flag"] == level) for level in LEVELS}
@@ -600,8 +609,9 @@ def backtest():
 
 CHECK_SQL = """
 WITH logged AS (
+    -- the drug and event saved with the flag, or today's for rows logged before they were saved
     SELECT l.recall_number, TRY_CAST(l.flagged_on AS DATE) AS flagged_on, l.flag,
-           k.event_id, k.drug_key
+           {event} AS event_id, {drug} AS drug_key, {saved} AS saved
     FROM read_csv('{log}', header = true, all_varchar = true) AS l
     LEFT JOIN read_parquet('{risk}') AS k ON k.recall_number = l.recall_number
 ),
@@ -610,24 +620,26 @@ units AS (
     -- with the highest flag any of them got
     SELECT event_id, drug_key, MIN(flagged_on) AS flagged_on,
            CASE MAX(CASE flag WHEN 'high' THEN 3 WHEN 'watch' THEN 2 ELSE 1 END)
-               WHEN 3 THEN 'high' WHEN 2 THEN 'watch' ELSE 'low' END AS flag
+               WHEN 3 THEN 'high' WHEN 2 THEN 'watch' ELSE 'low' END AS flag,
+           bool_and(saved) AS saved
     FROM logged
     WHERE drug_key IS NOT NULL AND flagged_on IS NOT NULL
     GROUP BY event_id, drug_key
 ),
 followed AS (
-    -- the first shortage of the same drug that FDA posted after the flag, within the window
+    -- the first shortage FDA posted after the flag, within the window, linked to any of the
+    -- unit's logged recalls
     SELECT u.event_id, u.drug_key,
            MIN(TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE) AS first_posted
     FROM units AS u
-    INNER JOIN read_parquet('{risk}') AS k ON k.event_id = u.event_id AND k.drug_key = u.drug_key
-    INNER JOIN read_parquet('{links}') AS s ON s.recall_number = k.recall_number
+    INNER JOIN logged AS g ON g.event_id = u.event_id AND g.drug_key = u.drug_key
+    INNER JOIN read_parquet('{links}') AS s ON s.recall_number = g.recall_number
     WHERE s.shortage_list_type = 'shortage'
       AND TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE > u.flagged_on
       AND TRY_STRPTIME(s.shortage_posted, '%m/%d/%Y')::DATE <= u.flagged_on + INTERVAL {days} DAY
     GROUP BY u.event_id, u.drug_key
 )
-SELECT u.event_id, u.drug_key, u.flag, u.flagged_on, f.first_posted
+SELECT u.event_id, u.drug_key, u.flag, u.flagged_on, f.first_posted, u.saved
 FROM units AS u
 LEFT JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
 ORDER BY u.flagged_on, u.drug_key
@@ -637,7 +649,7 @@ UNNAMED_SQL = """
 SELECT COUNT(*)
 FROM read_csv('{log}', header = true, all_varchar = true) AS l
 LEFT JOIN read_parquet('{risk}') AS k ON k.recall_number = l.recall_number
-WHERE k.drug_key IS NULL
+WHERE {drug} IS NULL
 """
 
 
@@ -661,13 +673,20 @@ def log_units(con, risk_path, links_path, log_path, days=FOLLOW_DAYS):
     with open(log_path, newline="", encoding="utf-8") as f:
         if not any(True for _ in csv.DictReader(f)):
             return [], 0
+    with open(log_path, newline="", encoding="utf-8") as f:
+        header = set(next(csv.reader(f), []))
+    # a log written before the drug and event were saved with each flag uses today's
+    saved = {"event_id", "drug_key"} <= header
+    keys = {"event": "COALESCE(NULLIF(l.event_id, ''), k.event_id)" if saved else "k.event_id",
+            "drug": "COALESCE(NULLIF(l.drug_key, ''), k.drug_key)" if saved else "k.drug_key",
+            "saved": "NULLIF(l.drug_key, '') IS NOT NULL" if saved else "FALSE"}
     paths = {"risk": Path(risk_path).as_posix(), "links": Path(links_path).as_posix(),
              "log": log_path.as_posix()}
-    rows = con.execute(CHECK_SQL.format(days=int(days), **paths)).fetchall()
+    rows = con.execute(CHECK_SQL.format(days=int(days), **paths, **keys)).fetchall()
     units = [{"event_id": event_id, "drug_key": key, "flag": flag, "flagged_on": flagged_on,
-              "first_posted": first_posted}
-             for event_id, key, flag, flagged_on, first_posted in rows]
-    return units, con.execute(UNNAMED_SQL.format(**paths)).fetchone()[0]
+              "first_posted": first_posted, "saved": bool(was_saved)}
+             for event_id, key, flag, flagged_on, first_posted, was_saved in rows]
+    return units, con.execute(UNNAMED_SQL.format(**paths, **keys)).fetchone()[0]
 
 
 def judge_log(units, today, since=FLAG_SINCE, days=FOLLOW_DAYS):
@@ -700,7 +719,20 @@ def judge_log(units, today, since=FLAG_SINCE, days=FOLLOW_DAYS):
         verdict = "can't tell"
     ends = [u["flagged_on"] + window for u in current
             if u["flag"] in ("watch", "low") and u["flagged_on"] + window > today]
-    return {"since": since, "days": days, "table": table, "verdict": verdict,
+    # each horizon only counts the flags old enough to have finished it
+    horizons = {}
+    for h in (h for h in HORIZONS if h <= days):
+        span, row = timedelta(days=h), {}
+        for level in LEVELS:
+            done = [u for u in current if u["flag"] == level and u["flagged_on"] + span <= today]
+            hit = sum(1 for u in done if u["first_posted"] and u["first_posted"] <= u["flagged_on"] + span)
+            row[level] = {"done": len(done), "followed": hit,
+                          "rate": hit / len(done) if done else None, "range": wilson(hit, len(done))}
+        horizons[h] = row
+    return {"since": since, "days": days, "table": table, "verdict": verdict, "horizons": horizons,
+            "lead_days": _quartiles([(u["first_posted"] - u["flagged_on"]).days
+                                     for u in current if u["first_posted"]]),
+            "names_today": sum(1 for u in current if not u.get("saved", True)),
             "first_full_year": min(ends) if ends else None,
             "followed": sorted((u for u in current if u["first_posted"]),
                                key=lambda u: (u["flagged_on"], u["drug_key"])),
@@ -765,6 +797,23 @@ def check_report(result, unnamed, today, backtest=None):
                      f"{row['followed']:,} | {_rate(row)} | {row['in_their_year']:,} | "
                      f"{row['followed_already']:,} |")
     lines.append("")
+    lines += ["## By how long after the flag", "",
+              "Each row only counts the flags old enough to have finished it. Lead time is "
+              "reported on its own, below, since a horizon says how many were followed, not how "
+              "early.", "",
+              "| Days after the flag | Watch | Low | High |", "|---|---|---|---|"]
+
+    def cell(c):
+        if not c["done"]:
+            return "none done yet"
+        return f"{c['followed']:,} of {c['done']:,} ({c['rate']:.1%})"
+
+    for h, row in result["horizons"].items():
+        lines.append(f"| {h} | {cell(row['watch'])} | {cell(row['low'])} | {cell(row['high'])} |")
+    q = result["lead_days"]
+    lines += ["", (f"**Lead time:** for flags followed so far, the shortage was posted a median of "
+                   f"{q['median']} days after the flag, and the middle half took {q['p25']} to "
+                   f"{q['p75']} days." if q else "**Lead time:** no flag has been followed yet."), ""]
     # this test counts any link of the same drug name, so it's compared with the backtest
     # counted the same way, not with its same-route headline
     any_link = (backtest or {}).get("definitions", {}).get("any_link")
@@ -795,6 +844,10 @@ def check_report(result, unnamed, today, backtest=None):
     if unnamed:
         lines += ["", f"{_count(unnamed, 'logged recall has', 'logged recalls have')} no drug name, "
                       "so they can't be matched to a shortage of the same drug, and they're left out."]
+    if result.get("names_today"):
+        lines += ["", f"{_count(result['names_today'], 'recalled drug was', 'recalled drugs were')} "
+                      "logged before the drug and event were saved with each flag, so they're judged "
+                      "on today's name. Every flag logged since is judged on the name it had that day."]
     return lines
 
 
@@ -817,7 +870,12 @@ def check_log(today=None):
                                  else [round(x, 4) for x in row["range"]]}
                          for level, row in result["table"].items()},
                "followed_so_far": len(result["followed"]), "old_points": result["old"],
-               "no_drug_name": unnamed}
+               "no_drug_name": unnamed, "judged_on_todays_name": result["names_today"],
+               "lead_days": result["lead_days"],
+               "horizons": {str(h): {level: {"done": c["done"], "followed": c["followed"],
+                                             "rate": None if c["rate"] is None else round(c["rate"], 4)}
+                                     for level, c in row.items()}
+                            for h, row in result["horizons"].items()}}
     CHECK_RESULTS.parent.mkdir(parents=True, exist_ok=True)
     CHECK_RESULTS.write_text("\n".join(lines) + "\n", encoding="utf-8")
     CHECK_JSON.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
