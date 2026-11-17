@@ -6,8 +6,8 @@ How ShortageSignal runs day to day, and what to do when something breaks. For wh
 
 | What | When | Where it runs | What it leaves |
 |---|---|---|---|
-| Daily pipeline | Every day at 12:00 UTC (8 AM Boston in summer, 7 AM in winter), and on demand | GitHub Actions, `.github/workflows/daily.yml` | The latest files on the `data` branch, in one commit, including the day's risk-flag backtest, plus a 30-day backup on the run's page |
-| Weekly digest | Mondays at 13:00 UTC, an hour after the daily run, and on demand | GitHub Actions, `.github/workflows/weekly.yml` | A GitHub issue labeled `digest` (or an email), plus the digest and its Excel list on the run's page for 90 days |
+| Daily pipeline | Every day at 12:23 UTC (8:23 AM Boston in summer, 7:23 AM in winter), and on demand | GitHub Actions, `.github/workflows/daily.yml` | The latest files on the `data` branch, in one commit, including the day's risk-flag backtest, plus a 30-day backup on the run's page |
+| Weekly digest | Mondays at 13:41 UTC, after the daily run, and on demand | GitHub Actions, `.github/workflows/weekly.yml` | A GitHub issue labeled `digest` (or an email), plus the digest and its Excel list on the run's page for 90 days |
 | CI | Every pull request and every change to `main` | GitHub Actions, `.github/workflows/ci.yml` | A pass or fail on the pull request. `main` only takes pull requests that pass |
 | Dashboard | Always on | Streamlit Community Cloud | Redeploys on every change to `main`, and downloads the data branch's files at most once an hour |
 | Power BI report | When you open it | Power BI Desktop on Windows | Nothing. Refresh pulls the data branch's files straight from GitHub |
@@ -121,6 +121,8 @@ The report is a Power BI project in `reports/powerbi/`, saved as text files so g
 ## Paused schedules
 
 GitHub pauses scheduled workflows in a public repo after 60 days without activity in it. If the Monday digest stops arriving, open **Actions** and click **Enable workflow** on **Daily pipeline**, **Weekly digest** and **Keep the dashboard awake**.
+
+GitHub can also delay or skip a single scheduled run when it's busy, which is why the schedules sit off the hour. If the dashboard's Updated time is more than a day old, run **Daily pipeline** from the Actions tab.
 
 ## Working on the code
 

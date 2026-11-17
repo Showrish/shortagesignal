@@ -1,10 +1,11 @@
 name: Daily pipeline
 
-# Runs every day at 12:00 UTC (8 AM Boston in summer, 7 AM in winter),
-# and on demand from the Actions tab with "Run workflow".
+# Runs every day at 12:23 UTC (8:23 AM Boston in summer, 7:23 AM in winter), and on demand
+# from the Actions tab with "Run workflow". Not on the hour: GitHub delays or skips
+# scheduled runs at the top of the hour when it's busy.
 on:
   schedule:
-    - cron: "0 12 * * *"
+    - cron: "23 12 * * *"
   workflow_dispatch:
 
 permissions:
