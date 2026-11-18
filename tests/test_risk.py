@@ -180,6 +180,18 @@ def test_route_of_reads_how_a_product_is_given():
     assert route_of("Ibuprofen Tablets, 200 mg") == "oral"
     assert route_of("Hydrocortisone Cream 1%") == "topical"
     assert route_of("Sodium Chloride 0.9%") is None
+    # IV bags that never say injection
+    assert route_of("Heparin Sodium in 0.45% Sodium Chloride, 25,000 USP units per 250 mL") == "injectable"
+    assert route_of("Dopamine Hydrochloride in 5% Dextrose, 400 mg/250 mL") == "injectable"
+    assert route_of("Vancomycin, 1 g/200 mL, Galaxy container") == "injectable"
+    assert route_of("Cefazolin 2 g premix, 100 mL") == "injectable"
+    assert route_of("Oxytocin 30 units, 500 mL bag") == "injectable"
+    assert route_of("Heparin Sodium 25,000 units in Dextrose 5%") == "injectable"
+    assert route_of("Potassium Chloride in Lactated Ringer's and 5% Dextrose") == "injectable"
+    # and what must not become injectable
+    assert route_of("Acetaminophen Tablets 500 mg, 1000 count bag") == "oral"
+    assert route_of("Glucose tablets in dextrose base") == "oral"
+    assert route_of("Sodium Chloride 0.65% Nasal Spray") == "nasal"
 
 
 def test_lag_counts_this_drug_going_short_not_anything_in_the_event(tmp_path):

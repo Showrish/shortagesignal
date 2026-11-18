@@ -301,7 +301,17 @@ ROUTES = [   # the first match wins, so eye drops in vials come out ophthalmic, 
     ("nasal", re.compile(r"nasal", re.I)),
     ("inhaled", re.compile(r"inhal|nebuli", re.I)),
     ("injectable", re.compile(r"inject|syringe|infusion|intraven|intramuscular|subcutaneous|ampul"
-                              r"|\bi\.?v\.?\b|\bvials?\b", re.I)),
+                              r"|\bi\.?v\.?\b|\bvials?\b"
+                              # a drug mixed into a diluent at a strength, which is an IV bag:
+                              # "Heparin Sodium in 0.45% Sodium Chloride", "Dopamine in Dextrose 5%",
+                              # "in Lactated Ringer's". Plain "Sodium Chloride 0.9%" stays unreadable,
+                              # since it could be a rinse, and so do tablets "in dextrose base".
+                              r"|\bin\s+\d+(?:\.\d+)?\s*%\s+(?:sodium\s+chloride|dextrose)"
+                              r"|\bin\s+(?:sodium\s+chloride|dextrose)\s+\d+(?:\.\d+)?\s*%"
+                              r"|\bin\s+lactated\s+ringer"
+                              # IV packaging words. Not "bag" alone: a 1000-count bag of tablets is oral
+                              r"|premix|flexible\s+container|viaflex|galaxy\s+container|\bivpb\b"
+                              r"|\bml\s+(?:single[\s-]dose\s+)?bags?\b", re.I)),
     ("transdermal", re.compile(r"transdermal|\bpatch", re.I)),
     ("rectal or vaginal", re.compile(r"rectal|vaginal|suppositor|enema", re.I)),
     ("topical", re.compile(r"topical|cream|ointment|\bgel\b|lotion|\bfoam\b|shampoo", re.I)),
