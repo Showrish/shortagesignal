@@ -31,17 +31,37 @@ Every day, GitHub Actions runs the pipeline end to end:
 
 ```mermaid
 flowchart LR
-    A[openFDA: recalls, shortages, NDC directory] --> B[Pull and merge]
-    B --> C[Identify drugs and link to shortages]
-    C --> D[Claude names what matching can't]
-    D --> E[Root causes: rules, then Claude]
-    E --> F[Risk flags and control chart]
-    F --> G{16 data checks}
-    G -->|pass| H[(data branch)]
-    G -->|error| I[Keep yesterday's data]
-    H --> J[Streamlit dashboard]
-    H --> K[Power BI report]
-    H --> L[Monday digest]
+    subgraph pull ["1. Pull, every day"]
+        direction TB
+        recalls["Recalls<br>last 60 days"]
+        shortages["Shortage list<br>daily snapshot"]
+        ndc["NDC directory<br>weekly"]
+        recalls ~~~ shortages ~~~ ndc
+    end
+    subgraph understand ["2. Understand each recall"]
+        direction TB
+        name["Name the drug<br>NDC, text, then Claude"]
+        link["Link to shortages<br>four match strengths"]
+        cause["Tag the root cause<br>rules, then Claude"]
+        flag["Flag the risk,<br>chart weekly recalls"]
+        name --> link --> cause --> flag
+    end
+    subgraph check ["3. Check"]
+        direction TB
+        checks{"16 data<br>checks"}
+        keep["Error: save nothing,<br>keep yesterday's data"]
+        checks -- error --> keep
+    end
+    subgraph use ["4. Save and use"]
+        direction LR
+        data[("data branch")]
+        dash["Streamlit dashboard"]
+        pbi["Power BI report"]
+        digest["Monday digest"]
+        data --> dash & pbi & digest
+    end
+    pull --> understand --> check
+    check -- pass --> use
 ```
 
 ## See it
