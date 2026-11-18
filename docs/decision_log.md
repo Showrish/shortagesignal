@@ -369,3 +369,8 @@ One entry per decision: what was chosen, why, and what was passed on.
 - **Why:** MODE picks among tied values in whatever order the database happens to read them, which changes between runs when DuckDB works in parallel. Three runs of the same query on the same data gave 868, 867 and 870 sterility recalled drugs. The total never moved, but a number that changes when nothing else did can't be trusted, or checked. Found during the UI refresh, when every number on the dashboard had to match before and after.
 - **Checked:** five runs of the analysis query, fingerprinting the output. The first try still differed once, from the row order of tied shares, not the numbers, which the tie-break on name fixed.
 - **Passed on:** running DuckDB on one thread, which hides the problem rather than fixing it. Breaking ties by the most serious cause, which would mean ranking the 12 causes, a judgment call with no clear answer.
+
+## 2026-11-18: one fresh label named the wrong drug
+- **Chose:** D-0357-2016's fresh hand label changes from salicylic acid to edetate calcium disodium, with a note on the row, and the fresh scores are worked out again. Claude's drug names on the fresh labels go from 14 of 15 to 15 of 15. The first score stays in fresh_labels_as_labeled.md.
+- **Why:** a diagnostic on the drug-name misses showed the product text says EDTA Calcium Disodium Injectable, and EDTA is edetate. The label was a slip, not a judgment call, and anyone can check it against the text. Leaving it would keep counting a right answer as wrong.
+- **Passed on:** changing anything that needs judgment after seeing the pipeline's answers. Root causes stay exactly as labeled, as before.

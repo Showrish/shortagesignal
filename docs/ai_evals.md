@@ -30,13 +30,13 @@ ShortageSignal uses Claude Haiku for three jobs: tagging the root cause when the
 | Test | Claude, ignoring salts | Matching, ignoring salts |
 |---|---|---|
 | First audit, 74 recalls with a clear drug (tuned on) | 70 of 74 (95%) alone, before any checks | 48 of 74 (65%) before Claude, 67 of 74 (91%) with Claude |
-| Fresh labels | **14 of 15 (93%)** | **9 of 12 (75%)** |
+| Fresh labels | **15 of 15 (100%)** | **9 of 12 (75%)** |
 
 "Ignoring salts" counts fentanyl and fentanyl citrate as the same drug, since recall text often leaves the salt off.
 
 **Two things worth knowing about these numbers:**
 
-- **The fresh drug labels were fixed once, in the open.** Nine of them broke the labeling rules, by giving a brand name instead of the generic, adding a purpose like expectorant, naming a kit with no drug, or making a typo. They were fixed to the rules after the first score, and each fixed row says so. Before the fix, the scores were 10 of 15 for Claude and 8 of 12 for matching. Both versions are kept, in `audit/fresh_labels.md` and `audit/fresh_labels_as_labeled.md`.
+- **The fresh drug labels were fixed in the open.** Nine of them broke the labeling rules, by giving a brand name instead of the generic, adding a purpose like expectorant, naming a kit with no drug, or making a typo. They were fixed to the rules after the first score, and each fixed row says so. A tenth, fixed later, named the wrong drug: D-0357-2016's product text says EDTA Calcium Disodium, which is edetate, and the label said salicylic acid, so Claude's answer had been right all along. Before the fix, the scores were 10 of 15 for Claude and 8 of 12 for matching. Both versions are kept, in `audit/fresh_labels.md` and `audit/fresh_labels_as_labeled.md`.
 - **Accepting combinations was a trade.** Letting Claude name compounded combinations, when every part is a known drug, raised the first audit's score from 82% to 91% and named about 1,300 more recalls. It also let in 2 wrong answers on the first audit, both for Nature-Throid, where Claude listed the hormones on the label instead of thyroid.
 
 **The real misses on the fresh labels were mostly in matching,** not Claude: a store brand accepted as a drug name (cvs), flavor and form words left in a name (menthol flavor cough drop), and an inactive ingredient named instead of the active one (edetate calcium disodium instead of salicylic acid). There were also caffeine dropped from a combination and two combinations left unnamed. They're tracked in issue #60.

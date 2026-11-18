@@ -78,10 +78,10 @@ Each of Claude's three jobs was scored against answers a person wrote: first on 
 |---|---|---|
 | Root causes, rules | 99 of 99 | 18 of 20 |
 | Root causes, Claude, on what the rules can't tag | not tested | 5 of 9 |
-| Drug names, Claude, ignoring salts | 70 of 74 | 14 of 15 |
+| Drug names, Claude, ignoring salts | 70 of 74 | 15 of 15 |
 | Ask the data | 17 of 18 test questions | |
 
-The fresh labels are the honest numbers, and the samples are small. [docs/ai_evals.md](docs/ai_evals.md) has the details, including the 9 drug labels that were fixed in the open and the chatbot's first live question that came back wrong.
+The fresh labels are the honest numbers, and the samples are small. [docs/ai_evals.md](docs/ai_evals.md) has the details, including the 10 drug labels that were fixed in the open and the chatbot's first live question that came back wrong.
 
 ## Built with
 
