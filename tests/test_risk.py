@@ -16,6 +16,7 @@ from shortagesignal.risk import (
     judge_log,
     log_units,
     route_of,
+    UNITS_SQL,
     run_backtest,
     score_recall,
     wilson,
@@ -404,4 +405,22 @@ def test_check_report_says_it_in_plain_words():
     assert "1 logged recall has no drug name" in text
     assert "| 30 | none done yet | none done yet | none done yet |" in text
     assert "**Lead time:** no flag has been followed yet." in text
+
+
+def test_units_take_the_most_common_root_cause_and_break_ties_a_to_z():
+    con = duckdb.connect()
+    con.execute("""CREATE VIEW recall_risk AS SELECT * FROM (VALUES
+        ('D-1', 'e1', 'heparin sodium', 'Sterility', '20250115'),
+        ('D-2', 'e1', 'heparin sodium', 'CGMP', '20250115'),
+        ('D-3', 'e2', 'carboplatin', 'Sterility', '20250115'),
+        ('D-4', 'e2', 'carboplatin', 'Sterility', '20250115'),
+        ('D-5', 'e2', 'carboplatin', 'CGMP', '20250115'))
+        AS t(recall_number, event_id, drug_key, root_cause, report_date)""")
+    con.execute("""CREATE VIEW recalls AS SELECT * FROM (VALUES
+        ('D-1', 'a'), ('D-2', 'b'), ('D-3', 'c'), ('D-4', 'd'), ('D-5', 'e'))
+        AS t(recall_number, product_description)""")
+    for _ in range(5):   # the same answer every time, which MODE couldn't promise on a tie
+        causes = {key: cause for _, key, _, cause, _, _ in con.execute(UNITS_SQL).fetchall()}
+        assert causes == {"heparin sodium": "CGMP",     # a 1-1 tie goes to the first A to Z
+                          "carboplatin": "Sterility"}   # 2 against 1, the most common wins
 

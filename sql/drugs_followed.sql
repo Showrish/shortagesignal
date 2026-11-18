@@ -1,12 +1,27 @@
 -- Every recalled drug that was followed within a year by a shortage of the same drug, with
 -- how many days it took, soonest first. The unit is one drug in one recall event, the same
 -- as in lag_by_root_cause.sql.
-WITH units AS (
+WITH causes AS (
+    -- each drug in each recall event's most common root cause. A tie goes to the cause that
+    -- comes first A to Z, so the same data always gives the same answer, where MODE picked
+    -- among tied causes at random and a rerun could move a drug from one cause to another.
+    SELECT event_id, drug_key, first(root_cause ORDER BY n DESC, root_cause) AS root_cause
+    FROM (
+        SELECT k.event_id, k.drug_key, k.root_cause, COUNT(*) AS n
+        FROM recall_risk AS k
+        INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+        WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
+        GROUP BY k.event_id, k.drug_key, k.root_cause
+    )
+    GROUP BY event_id, drug_key
+),
+units AS (
     SELECT k.event_id, k.drug_key,
            MIN(TRY_STRPTIME(r.recall_initiation_date, '%Y%m%d'))::DATE AS recall_date,
-           MODE(k.root_cause) AS root_cause
+           any_value(c.root_cause) AS root_cause
     FROM recall_risk AS k
     INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+    INNER JOIN causes AS c ON c.event_id = k.event_id AND c.drug_key = k.drug_key
     WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
     GROUP BY k.event_id, k.drug_key
 ),
@@ -26,4 +41,4 @@ SELECT u.event_id, u.drug_key, u.root_cause, u.recall_date, f.first_posted,
 FROM units AS u
 INNER JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
 WHERE u.recall_date >= DATE '2020-01-01'
-ORDER BY days
+ORDER BY days, u.event_id, u.drug_key   -- the same order on every run
