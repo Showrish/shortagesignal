@@ -16,7 +16,7 @@ What ShortageSignal can't see, where it can be wrong, and how far its findings g
 - **About 17% of recalls have no drug name,** mostly compounded products and unusual descriptions. They can't link to a shortage by drug, so they're left out of the drug-level analysis.
 - **Drug-only links are loose.** They mean the same drug from any company. 32 of the 45 recalled drugs that were followed by a shortage rest on this kind of link, so many of those shortages may have nothing to do with the recall.
 - **Drug names don't always line up.** Salts and combination products can split one drug into two names, like quinapril and quinapril hydrochloride, or miss a match between them.
-- **Company names are cleaned with rules.** Subsidiaries, renamed firms and unusual spellings can still be counted as different companies.
+- **Company names are cleaned with rules.** A parent company named after the firm, as in "Hospira, Inc., a Pfizer Company", is dropped, so that name and plain "Hospira, Inc." are the same company. A subsidiary under its own name, like Hospira for Pfizer, a renamed firm or an unusual spelling can still count as a different company.
 
 ## Where the AI parts can be wrong
 
