@@ -23,7 +23,7 @@ What ShortageSignal can't see, where it can be wrong, and how far its findings g
 The full results are in [ai_evals.md](ai_evals.md). In short:
 
 - **Root causes:** rules tag about 99% of recalls, and Claude tags the rest. On 30 fresh recalls nothing was tuned on, the rules were right 18 of 20 times and Claude 5 of 9, on the hardest leftovers. That's a small sample with wide ranges. Claude's low and medium confidence answers go to a review list, but nobody reviews them automatically.
-- **Drug names:** Claude named the drug for about 4,900 recalls. On the fresh labels its names were right 14 of 15 times when salts are ignored, against 9 of 12 for matching. Its name is only used when Claude is fairly sure and the drug is known to exist, or, for a combination like a compounded semaglutide with cyanocobalamin, when every part is. That catches most wrong answers, but not all.
+- **Drug names:** Claude named the drug for about 4,900 recalls. On the fresh labels its names were right 15 of 15 times when salts are ignored, against 9 of 12 for matching. Its name is only used when Claude is fairly sure and the drug is known to exist, or, for a combination like a compounded semaglutide with cyanocobalamin, when every part is. That catches most wrong answers, but not all.
 - **Ask the data:** the chatbot got 17 of 18 test questions right, but the developer wrote those questions and fixed the prompt after seeing the first results. Real questions are looser. Every answer shows its SQL so it can be checked, and the first live question did come back wrong before a fix.
 - **One person labeled everything,** with no second labeler, and some root-cause categories have fuzzy edges.
 
