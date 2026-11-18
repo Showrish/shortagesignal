@@ -6,12 +6,27 @@
 -- (that would ask whether anything in the batch went short, which is too loose). A shortage
 -- happens to a drug, so the question is whether this drug went short after this recall.
 -- Recalls whose drug couldn't be named are left out, since there's no drug to follow.
-WITH units AS (
+WITH causes AS (
+    -- each drug in each recall event's most common root cause. A tie goes to the cause that
+    -- comes first A to Z, so the same data always gives the same answer, where MODE picked
+    -- among tied causes at random and a rerun could move a drug from one cause to another.
+    SELECT event_id, drug_key, first(root_cause ORDER BY n DESC, root_cause) AS root_cause
+    FROM (
+        SELECT k.event_id, k.drug_key, k.root_cause, COUNT(*) AS n
+        FROM recall_risk AS k
+        INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+        WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
+        GROUP BY k.event_id, k.drug_key, k.root_cause
+    )
+    GROUP BY event_id, drug_key
+),
+units AS (
     SELECT k.event_id, k.drug_key,
            MIN(TRY_STRPTIME(r.recall_initiation_date, '%Y%m%d'))::DATE AS recall_date,
-           MODE(k.root_cause) AS root_cause
+           any_value(c.root_cause) AS root_cause
     FROM recall_risk AS k
     INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+    INNER JOIN causes AS c ON c.event_id = k.event_id AND c.drug_key = k.drug_key
     WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
     GROUP BY k.event_id, k.drug_key
 ),
@@ -37,4 +52,6 @@ FROM units AS u
 LEFT JOIN followed AS f ON f.event_id = u.event_id AND f.drug_key = u.drug_key
 WHERE u.recall_date >= DATE '2020-01-01'   -- older recalls can't be followed by shortages still listed today
 GROUP BY u.root_cause
-ORDER BY pct_followed DESC
+-- shares are rounded, so ties are common: the name breaks them, so the table and chart
+-- list tied causes the same way on every run
+ORDER BY pct_followed DESC, root_cause

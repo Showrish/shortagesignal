@@ -309,13 +309,28 @@ ROUTES = [   # the first match wins, so eye drops in vials come out ophthalmic, 
 ]
 
 UNITS_SQL = """
+WITH causes AS (
+    -- each drug in each recall event's most common root cause. A tie goes to the cause that
+    -- comes first A to Z, so the same data always gives the same answer, where MODE picked
+    -- among tied causes at random and a rerun could move a drug from one cause to another.
+    SELECT event_id, drug_key, first(root_cause ORDER BY n DESC, root_cause) AS root_cause
+    FROM (
+        SELECT k.event_id, k.drug_key, k.root_cause, COUNT(*) AS n
+        FROM recall_risk AS k
+        INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+        WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
+        GROUP BY k.event_id, k.drug_key, k.root_cause
+    )
+    GROUP BY event_id, drug_key
+)
 SELECT k.event_id, k.drug_key,
        MIN(TRY_STRPTIME(k.report_date, '%Y%m%d'))::DATE AS reported,
-       MODE(k.root_cause) AS root_cause,
+       any_value(c.root_cause) AS root_cause,
        list(DISTINCT k.recall_number) AS recall_numbers,
        list(DISTINCT r.product_description) AS products
 FROM recall_risk AS k
 INNER JOIN recalls AS r ON r.recall_number = k.recall_number
+INNER JOIN causes AS c ON c.event_id = k.event_id AND c.drug_key = k.drug_key
 WHERE k.drug_key IS NOT NULL AND k.root_cause IS NOT NULL
 GROUP BY k.event_id, k.drug_key
 """
