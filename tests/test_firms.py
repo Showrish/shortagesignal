@@ -16,6 +16,13 @@ from shortagesignal.firms import firm_key
         ("Fresenius Kabi USA, LLC", "FRESENIUS KABI"),
         ("Dr. Reddy's Laboratories Limited", "DR REDDY"),
         ("Sagent Pharmaceuticals", "SAGENT"),
+        # a parent company named after the firm is dropped
+        ("Hospira, Inc., a Pfizer Company", "HOSPIRA"),
+        ("Sandoz Inc., a Novartis company", "SANDOZ"),
+        ("Merck Sharp & Dohme Corp., a subsidiary of Merck & Co., Inc.", "MERCK SHARP AND DOHME"),
+        ("Bausch & Lomb Incorporated, a division of Bausch Health", "BAUSCH AND LOMB"),
+        ("Mylan Institutional, an affiliate of Viatris", "MYLAN INSTITUTIONAL"),
+        ("Teva Parenteral Medicines, Inc., a wholly-owned subsidiary of Teva", "TEVA PARENTERAL MEDICINES"),
         ("", None),
         (None, None),
     ],

@@ -20,6 +20,7 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - The backtest starts each recall's year on its report date, counts only recalls with a full year since, counts a shortage three ways (any link, the same route, the same company) with the same route as the headline, and compares the watch flag with flagging every recall on precision, share caught, review work and lead time
 
 ### Fixed
+- Company names drop a parent company named after the firm, so "Hospira, Inc., a Pfizer Company" matches plain "Hospira, Inc.", which moves 299 links up to the same drug and company
 - A fresh hand label that named the wrong drug, EDTA as salicylic acid, is corrected, with the first score kept
 - Each drug's root cause in the analysis and the backtest is the same on every run, with ties broken A to Z, where MODE picked among tied causes at random
 - Drug names: a store brand like CVS never counts as a drug, flavor and cough-drop words are stripped, and a second drug after a strength, as in ergotamine 1 mg/caffeine 100 mg, is kept when the combination is a known drug
