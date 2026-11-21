@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shortagesignal"
-version = "1.0.0"
+version = "1.1.0"
 description = "Tracks FDA drug recalls and shortages and links the two"
 requires-python = ">=3.10"
 dependencies = [

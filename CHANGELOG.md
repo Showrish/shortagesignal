@@ -3,7 +3,12 @@
 Every notable change, newest first. Each release moves the Unreleased items under its version.
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-11-21
+Stricter evaluation, two views of risk, a redesigned dashboard, and four data fixes found by checking the numbers.
+
 ### Added
+- A CI check that a dashboard change keeps every SQL query, data file, safeguard and caveat, run on every pull request
 - A link hand check, `python -m shortagesignal.link_check`: a blind sheet of 30 links to test the backtest's automatic route and company comparisons
 - A Pipeline health tab on the dashboard: recent runs, the latest data checks, data freshness, and the code and Claude versions behind the numbers
 - The run log records the commit of the code each run used
@@ -13,6 +18,8 @@ Every notable change, newest first. Each release moves the Unreleased items unde
 - The Ask the data tab shows how Claude read each question and how fresh the data is, under every answer
 
 ### Changed
+- The README's pipeline diagram is four short columns, readable at normal zoom, and its picture shows the new dashboard
+- The dashboard has a new look: a shortage-board theme in light and dark mode, caveats at body size under the numbers they qualify, a recall board of the 10 strongest matches, and labeled bars on What follows a recall
 - The daily run starts at 12:23 UTC and the weekly digest at 13:41 UTC, off the top of the hour, where GitHub delays or skips scheduled runs
 - The Risk flags tab splits into current exposure, with how strong each match is, and future monitoring, with the odds and lead time next to the watch flags
 - The dashboard says what the odds count, and that older years are undercounted, right under them
