@@ -1,0 +1,66 @@
+{
+  "unit": "one drug in one recall event",
+  "since": "2020-01-01",
+  "window": "from the report date to 365 days after",
+  "cohort_end": "2025-11-27",
+  "recalled_drugs": 3311,
+  "waiting_for_full_year": 480,
+  "primary": "same_route",
+  "followed": 27,
+  "rate": 0.0094,
+  "rate_by_flag": {
+    "watch": 0.0174,
+    "low": 0.0041
+  },
+  "lift": {
+    "watch": 1.85
+  },
+  "sterility_lift": 1.44,
+  "definitions": {
+    "any_link": {
+      "counted": 3311,
+      "followed": 41,
+      "rate": 0.0124,
+      "watch_rate": 0.0191,
+      "low_rate": 0.0088,
+      "capture": 0.5366
+    },
+    "same_route": {
+      "counted": 2872,
+      "followed": 27,
+      "rate": 0.0094,
+      "watch_rate": 0.0174,
+      "low_rate": 0.0041,
+      "capture": 0.7407
+    },
+    "same_company": {
+      "counted": 3311,
+      "followed": 4,
+      "rate": 0.0012,
+      "watch_rate": 0.0,
+      "low_rate": 0.0019,
+      "capture": 0.0
+    }
+  },
+  "baselines": {
+    "flag_all": {
+      "flagged": 2872,
+      "precision": 0.0094,
+      "per_week": 9.3
+    },
+    "watch": {
+      "flagged": 1152,
+      "precision": 0.0174,
+      "capture": 0.7407,
+      "workload": 0.4011,
+      "per_week": 3.7
+    }
+  },
+  "lead_days": {
+    "median": 154,
+    "p25": 104,
+    "p75": 203
+  },
+  "caveat": "Counting only recalls with a full year after their report fixes incomplete follow-up, not missing history. FDA's feed drops resolved shortages after a while, so older years are still undercounted, and these numbers describe this dataset, not every shortage.",
+  "computed_on": "2026-11-27"
+}
